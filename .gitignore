@@ -1,0 +1,13 @@
+data/
+checkpoints/
+logs/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.env
+*.egg-info/
+dist/
+build/
+.ipynb_checkpoints/
+wandb/

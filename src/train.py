@@ -24,7 +24,7 @@ def get_device() -> torch.device:
 
 def train(cfg: dict):
     device = get_device()
-    print(f"Using device: {device}")
+    print(f"Using device: {device}", flush=True)
 
     tokenizer = AutoTokenizer.from_pretrained(cfg["model"]["text_encoder"])
     model = MedCLIP(
@@ -38,9 +38,9 @@ def train(cfg: dict):
                             image_size=cfg["data"]["image_size"])
 
     train_loader = DataLoader(train_ds, batch_size=cfg["training"]["batch_size"],
-                              shuffle=True,  num_workers=4, pin_memory=False)
+                              shuffle=True,  num_workers=0, pin_memory=False)
     val_loader   = DataLoader(val_ds,   batch_size=cfg["training"]["batch_size"],
-                              shuffle=False, num_workers=4, pin_memory=False)
+                              shuffle=False, num_workers=0, pin_memory=False)
 
     encoder_params    = list(model.image_encoder.parameters()) + list(model.text_encoder.parameters())
     projection_params = list(model.image_proj.parameters()) + list(model.text_proj.parameters()) + [model.logit_scale]
@@ -88,15 +88,15 @@ def train(cfg: dict):
                 val_loss += infonce_loss(logits_i, logits_t).item()
         avg_val = val_loss / len(val_loader)
 
-        print(f"Epoch {epoch}/{epochs}  train_loss={avg_train:.4f}  val_loss={avg_val:.4f}")
+        print(f"Epoch {epoch}/{epochs}  train_loss={avg_train:.4f}  val_loss={avg_val:.4f}", flush=True)
 
         if avg_val < best_val_loss:
             best_val_loss = avg_val
             torch.save(model.state_dict(), ckpt_dir / "best.pt")
-            print(f"  → saved best checkpoint (val_loss={best_val_loss:.4f})")
+            print(f"  → saved best checkpoint (val_loss={best_val_loss:.4f})", flush=True)
 
     torch.save(model.state_dict(), ckpt_dir / "last.pt")
-    print("Training complete.")
+    print("Training complete.", flush=True)
 
 
 if __name__ == "__main__":

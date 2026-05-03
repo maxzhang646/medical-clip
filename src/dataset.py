@@ -1,5 +1,3 @@
-import os
-import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pandas as pd
@@ -39,10 +37,35 @@ class OpenIDataset(Dataset):
         self.samples = self._load_samples(split)
 
     def _load_samples(self, split: str) -> list[dict]:
-        # TODO: parse OpenI XML reports → build (image_path, caption) list
-        # Expected XML fields: findings, impression
-        # Placeholder — implement after downloading data
-        raise NotImplementedError("Implement after downloading Indiana dataset")
+        reports = pd.read_csv(self.root / "indiana_reports.csv")
+        projections = pd.read_csv(self.root / "indiana_projections.csv")
+
+        # Keep frontal view only and join with reports
+        frontal = projections[projections["projection"] == "Frontal"][["uid", "filename"]]
+        df = reports.merge(frontal, on="uid", how="inner")
+
+        # Drop rows with empty findings or impression
+        df = df[df["findings"].notna() & df["impression"].notna()]
+        df = df[df["findings"].str.strip().ne("") & df["impression"].str.strip().ne("")]
+        df = df.drop_duplicates(subset="uid").reset_index(drop=True)
+
+        # Patient-level train/val/test split (80/10/10)
+        uids = df["uid"].unique()
+        n = len(uids)
+        rng = pd.Series(uids).sample(frac=1, random_state=42).values
+        cuts = [int(n * 0.8), int(n * 0.9)]
+        split_uids = {"train": rng[:cuts[0]], "val": rng[cuts[0]:cuts[1]], "test": rng[cuts[1]:]}
+        df = df[df["uid"].isin(split_uids[split])].reset_index(drop=True)
+
+        img_dir = self.root / "images" / "images_normalized"
+        samples = []
+        for _, row in df.iterrows():
+            img_path = img_dir / row["filename"]
+            if not img_path.exists():
+                continue
+            caption = f"{row['findings'].strip()} {row['impression'].strip()}"
+            samples.append({"image_path": str(img_path), "caption": caption, "uid": row["uid"]})
+        return samples
 
     def __len__(self) -> int:
         return len(self.samples)

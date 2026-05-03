@@ -16,7 +16,7 @@ training:
   fp16: false          # MPS does not support fp16; set true for CUDA
 
 data:
-  indiana_dir: data/indiana
+  indiana_dir: /Users/wenluzhang/.cache/kagglehub/datasets/raddar/chest-xrays-indiana-university/versions/2
   nih_dir: data/nih
   image_size: 224
   train_split: 0.8

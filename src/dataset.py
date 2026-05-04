@@ -101,7 +101,17 @@ class NIHDataset(Dataset):
         self.root = Path(root)
         self.classes = classes
         self.transform = _build_transforms(image_size, train=False)
+        self.image_index = self._build_image_index()
         self.df = self._load_metadata()
+
+    def _build_image_index(self) -> dict:
+        img_dir = self.root / "images"
+        index = {p.name: p for p in img_dir.rglob("*.png")}
+        if not index:
+            # fallback: images directly in root
+            index = {p.name: p for p in self.root.rglob("*.png")}
+        print(f"NIHDataset: indexed {len(index)} images")
+        return index
 
     def _load_metadata(self) -> pd.DataFrame:
         csv_path = self.root / "Data_Entry_2017.csv"
@@ -109,16 +119,18 @@ class NIHDataset(Dataset):
         df = df.rename(columns={"Image Index": "image", "Finding Labels": "labels"})
         for cls in self.classes:
             df[cls] = df["labels"].str.contains(cls).astype(int)
-        # Keep only rows that have at least one of our target classes or are Normal
         mask = df[self.classes].any(axis=1) | df["labels"].eq("No Finding")
-        return df[mask].reset_index(drop=True)
+        df = df[mask].reset_index(drop=True)
+        # Keep only rows whose image file exists
+        df = df[df["image"].isin(self.image_index)].reset_index(drop=True)
+        return df
 
     def __len__(self) -> int:
         return len(self.df)
 
     def __getitem__(self, idx: int):
         row = self.df.iloc[idx]
-        img_path = self.root / "images" / row["image"]
+        img_path = self.image_index[row["image"]]
         image = Image.open(img_path).convert("RGB")
         image = self.transform(image)
         labels = row[self.classes].values.astype("float32")

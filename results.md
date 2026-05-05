@@ -34,7 +34,19 @@
 - Edema is hardest: best AUC 0.47, below random for most prompts
 - Ensemble does NOT win — negative interference between prompt styles
 
-## 3. Training
+## 3. Edema Failure Analysis
+
+Edema is the only class with best AUC below 0.5 (0.473), effectively random. Three compounding causes:
+
+**Training data scarcity.** OpenI has ~3,955 reports total. Pulmonary edema is a secondary presentation of heart failure and appears infrequently in a general chest X-ray dataset — estimated <8% prevalence, yielding ~200 training pairs. The model never sees enough Edema examples to learn a stable visual-language alignment.
+
+**Visual overlap with adjacent classes.** Edema's radiographic features (bilateral haziness, perihilar butterfly pattern, blunted costophrenic angles) overlap substantially with Effusion (fluid at lung bases) and Consolidation (airspace opacity). The model likely attributes Edema's visual signal to these more frequent neighbors during contrastive training.
+
+**NIH label noise.** NIH labels are NLP-extracted from radiology reports. Radiologists describe pulmonary edema using varied terminology ("pulmonary congestion", "vascular engorgement", "interstitial edema") that NLP tools miss, producing noisier ground truth for Edema than for well-defined classes like Cardiomegaly.
+
+**Prompt engineering cannot fix this.** Even the best prompt (`patient`) only reaches AUC 0.473 — the ceiling is set by the quality of the learned visual representation, not the inference-time text. Fixing Edema would require more training data (e.g. MIMIC-CXR) or explicit oversampling of Edema-positive reports.
+
+## 4. Training
 
 - Best checkpoint: Epoch 9, val_loss = 3.6404
 - Overfitting onset: ~Epoch 9 (train/val gap widens)

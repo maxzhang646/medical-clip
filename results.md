@@ -25,14 +25,16 @@
 | **patient** | **0.7069** | 0.7095 | **0.6297** | **0.4729** | **0.4785** | **0.5299** | **0.6626** | **0.5210** | **0.5889** |
 | radiologist | 0.7116 | 0.7088 | 0.5363 | 0.2904 | 0.3689 | 0.3939 | 0.5211 | 0.3518 | 0.4854 |
 | ensemble | 0.7121 | **0.7214** | 0.5111 | 0.3087 | 0.3482 | 0.4114 | 0.5368 | 0.3563 | 0.4882 |
+| pos_neg | 0.7082 | 0.7240 | 0.4035 | 0.2388 | 0.2994 | 0.3816 | 0.4956 | 0.3457 | 0.4496 |
 
 ### Key findings
 
-- "patient" prompt ("A patient with {disease}") is best for 6/8 diseases
-- Atelectasis and Cardiomegaly are prompt-insensitive (range < 0.03)
-- Consolidation shows largest prompt sensitivity: 0.37 → 0.63 (+0.26)
-- Edema is hardest: best AUC 0.47, below random for most prompts
-- Ensemble does NOT win — negative interference between prompt styles
+- `patient` ("A patient with {disease}") is best for 6/8 diseases; Macro AUC 0.589
+- Atelectasis and Cardiomegaly are prompt-insensitive (range < 0.03 across all prompts)
+- Consolidation shows largest prompt sensitivity: 0.367 → 0.630 (+0.26 AUC)
+- Edema is hardest: best AUC 0.473, below random for most prompts
+- Ensemble does NOT win — averaging diverse styles causes negative interference
+- `pos_neg` (positive + negative templates averaged) is the worst strategy: Macro AUC 0.4496, barely above `simple` (0.4487). Averaging in "No evidence of X" pulls the class embedding toward no-disease space, hurting recall across the board — Effusion drops to 0.299 (worst of any prompt/class combination)
 
 ## 3. Edema Failure Analysis
 

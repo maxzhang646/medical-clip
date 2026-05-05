@@ -30,12 +30,16 @@ AUC-ROC by prompt template across 8 disease classes:
 | radiologist | 0.712 | 0.709 | 0.536 | 0.290 | 0.369 | 0.394 | 0.521 | 0.352 | 0.485 |
 | ensemble | 0.712 | **0.721** | 0.511 | 0.309 | 0.348 | 0.411 | 0.537 | 0.356 | 0.488 |
 
+![Prompt Ablation](figures/prompt_ablation.png)
+
 **Key findings:**
 - `"A patient with {disease}"` is the best template for 6/8 classes (Macro AUC 0.589)
 - Consolidation shows the largest prompt sensitivity: 0.367 → 0.630 (+0.26 AUC)
 - Atelectasis and Cardiomegaly are prompt-insensitive (range < 0.03)
 - Ensemble averaging does **not** win — negative interference between prompt styles hurts more than diversity helps
 - Edema is the hardest class (best AUC 0.473), likely due to underrepresentation in OpenI training reports
+
+![ROC Curves](figures/roc_curves.png)
 
 ---
 

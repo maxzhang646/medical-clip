@@ -1,0 +1,16 @@
+{
+  "id": "maxzhang646/biomedclip-openi-finetune",
+  "title": "BioMedCLIP OpenI Finetune",
+  "code_file": "04_biomedclip_finetune.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "raddar/chest-xrays-indiana-university"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}

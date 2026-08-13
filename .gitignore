@@ -1,6 +1,6 @@
 data/
 .claude/
-checkpoints/
+checkpoints*/
 logs/
 __pycache__/
 *.pyc
@@ -12,3 +12,4 @@ dist/
 build/
 .ipynb_checkpoints/
 wandb/
+reference/

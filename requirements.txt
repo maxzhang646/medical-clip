@@ -1,5 +1,7 @@
 torch>=2.0
 torchvision>=0.15
+git+https://github.com/openai/CLIP.git
+open_clip_torch>=3.0
 transformers>=4.30
 ftfy
 regex

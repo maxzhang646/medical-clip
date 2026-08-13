@@ -1,11 +1,13 @@
-# Medical CLIP for Chest X-ray Retrieval and Zero-shot Diagnosis
+# Medical CLIP for Chest X-ray Vision-Language Alignment and Evidence Retrieval
 
 ## Project Goals
 
-- Train a chest X-ray CLIP model on image-report pairs
-- Evaluate image-text bidirectional retrieval (Recall@K, MedR)
-- Zero-shot classification on 8 disease classes from NIH ChestX-ray14
-- Ablation study on prompt design and its effect on zero-shot performance
+- Learn CLIP-style multimodal alignment between chest X-ray images and radiology reports
+- Train a chest X-ray image-report retriever with contrastive learning
+- Evaluate bidirectional image-text retrieval (Recall@K, MedR) as the main alignment signal
+- Use zero-shot classification on 8 NIH ChestX-ray14 disease classes as a secondary probe of the learned embedding space
+- Study prompt design and its effect on zero-shot performance
+- Explore evidence retrieval as a lightweight application of the learned multimodal embedding space
 
 ---
 

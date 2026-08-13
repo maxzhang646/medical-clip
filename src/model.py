@@ -5,13 +5,14 @@ import torch.nn.functional as F
 
 
 class MedCLIP(nn.Module):
-    def __init__(self, embed_dim: int = 512, freeze_image_layers: int = 8):
+    def __init__(self, embed_dim: int = 512, freeze_image_layers: int = 8,
+                 temperature: float = 0.07):
         super().__init__()
         self.image_encoder = self._build_image_encoder(freeze_image_layers)
         self.text_encoder  = self._build_text_encoder()
         self.image_proj    = nn.Linear(512, embed_dim)
         self.text_proj     = nn.Linear(768, embed_dim)
-        self.logit_scale   = nn.Parameter(torch.ones([]) * math.log(1 / 0.07))
+        self.logit_scale   = nn.Parameter(torch.ones([]) * math.log(1 / temperature))
 
     def _build_image_encoder(self, freeze_layers: int):
         import clip

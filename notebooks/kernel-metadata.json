@@ -1,0 +1,18 @@
+{
+  "id": "maxzhang646/medclip-evaluation",
+  "title": "MedCLIP Evaluation",
+  "code_file": "03_evaluation.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "maxzhang646/medclip-checkpoint",
+    "nih-chest-xrays/data",
+    "raddar/chest-xrays-indiana-university"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}

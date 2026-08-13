@@ -1,6 +1,6 @@
-# Medical CLIP: Chest X-ray Retrieval and Zero-shot Diagnosis
+# Medical CLIP: Chest X-ray Vision-Language Alignment and Evidence Retrieval
 
-A medical vision-language model trained on radiology report pairs via contrastive learning. Supports image-text retrieval and zero-shot disease classification on 8 pathology classes — no labeled training data required at inference time.
+A medical vision-language learning project focused on aligning chest X-ray images with radiology reports via contrastive learning. The main goal is to study multimodal representation learning through image-text retrieval, prompt-based zero-shot evaluation, and evidence retrieval for downstream medical reasoning.
 
 ---
 
@@ -90,6 +90,19 @@ kaggle datasets download raddar/chest-xrays-indiana-university -p data/indiana -
 kaggle datasets download nih-chest-xrays/data -p data/nih --unzip
 ```
 
+Expected OpenI layout:
+
+```text
+data/indiana/
+├── indiana_reports.csv
+├── indiana_projections.csv
+└── images/
+    └── images_normalized/
+        └── *.png
+```
+
+If your OpenI dataset lives outside the repo, either update `configs/base.yaml` or pass `--indiana-dir` to the Stage 1/Stage 2 scripts.
+
 **Zero-shot disease classes (NIH):** Atelectasis · Cardiomegaly · Consolidation · Edema · Effusion · Infiltration · Pneumonia · Pneumothorax
 
 ---
@@ -113,6 +126,10 @@ xray/
 │   └── 03_evaluation.ipynb   # retrieval + zero-shot evaluation
 ├── configs/
 │   └── base.yaml         # hyperparameters
+├── splits/
+│   ├── openi_train_uids.txt
+│   ├── openi_val_uids.txt
+│   └── openi_test_uids.txt
 ├── checkpoints/
 │   └── best.pt           # best model (Epoch 9)
 ├── results.md
@@ -131,6 +148,42 @@ pip install -r requirements.txt
 
 Requirements: Python 3.10+, PyTorch 2.0+ (MPS supported for Apple Silicon).
 
+### Reproducibility Smoke Check
+
+After downloading OpenI into `data/indiana`, run:
+
+```bash
+python3 scripts/stage2_smoke_check.py
+python3 scripts/stage1_toy_infonce.py
+python3 scripts/stage1_inspect_openi_batch.py --batch-size 2 --split train
+python3 scripts/stage1_forward_real_batch.py --batch-size 2 --split train
+```
+
+If OpenI is in a different location:
+
+```bash
+python3 scripts/stage2_smoke_check.py --indiana-dir /path/to/openi
+python3 scripts/stage1_inspect_openi_batch.py --indiana-dir /path/to/openi
+python3 scripts/stage1_forward_real_batch.py --indiana-dir /path/to/openi
+```
+
+To regenerate deterministic OpenI split files:
+
+```bash
+python3 scripts/create_openi_splits.py
+```
+
+The repository includes UID split files under `splits/`; they make the Stage 1 examples and retrieval evaluation use stable train/val/test partitions.
+
+### Checkpoints
+
+`checkpoints/` is ignored by git because model weights are large. To run commands that require `checkpoints/best.pt`, either train the model or place a compatible checkpoint at that path:
+
+```bash
+python3 src/train.py --config configs/base.yaml
+python3 scripts/stage1_forward_real_batch.py --checkpoint checkpoints/best.pt
+```
+
 ---
 
 ## Training
@@ -141,6 +194,12 @@ python src/train.py --config configs/base.yaml
 
 The training script auto-detects MPS (Apple Silicon) / CUDA / CPU.
 
+If OpenI is outside `data/indiana`, pass:
+
+```bash
+python src/train.py --config configs/base.yaml --indiana-dir /path/to/openi
+```
+
 ---
 
 ## Evaluation
@@ -148,6 +207,8 @@ The training script auto-detects MPS (Apple Silicon) / CUDA / CPU.
 ```bash
 # Retrieval on OpenI test split
 python src/retrieval.py --checkpoint checkpoints/best.pt
+# If OpenI is outside data/indiana:
+python src/retrieval.py --checkpoint checkpoints/best.pt --indiana-dir /path/to/openi
 
 # Zero-shot classification on NIH
 python src/zeroshot.py --checkpoint checkpoints/best.pt --prompt patient

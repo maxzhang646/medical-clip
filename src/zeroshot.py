@@ -65,11 +65,20 @@ if __name__ == "__main__":
                           "cuda" if torch.cuda.is_available() else "cpu")
 
     tokenizer = AutoTokenizer.from_pretrained(cfg["model"]["text_encoder"])
-    model = MedCLIP(cfg["model"]["embed_dim"], cfg["model"]["freeze_image_layers"]).to(device)
+    model = MedCLIP(
+        cfg["model"]["embed_dim"],
+        cfg["model"]["freeze_image_layers"],
+        cfg["training"]["temperature"],
+    ).to(device)
     model.load_state_dict(torch.load(args.checkpoint, map_location=device))
 
     diseases = cfg["eval"]["nih_classes"]
-    dataset  = NIHDataset(cfg["data"]["nih_dir"], classes=diseases)
+    dataset  = NIHDataset(
+        cfg["data"]["nih_dir"],
+        classes=diseases,
+        image_size=cfg["data"]["image_size"],
+        image_normalization=cfg["data"].get("image_normalization", "imagenet"),
+    )
     loader   = DataLoader(dataset, batch_size=128, shuffle=False, num_workers=4)
 
     print(f"\nZero-shot evaluation  [prompt={args.prompt}]")

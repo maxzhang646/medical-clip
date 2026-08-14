@@ -52,7 +52,86 @@ BioMedCLIP was evaluated with `scripts/stage3_biomedclip_baseline.py` using `hf-
 | BioMedCLIP | 1.56 | 5.31 | 8.12 | 120.00 | 1.25 | 6.25 | 8.75 | 108.50 | 0.0154 |
 | Retrained CLIP-norm MedCLIP | 3.75 | 12.81 | 20.62 | 49.50 | 4.38 | 11.88 | 19.38 | 47.00 | 0.1717 |
 
-BioMedCLIP is stronger than vanilla OpenAI CLIP on exact OpenI retrieval, but weaker than the project-specific fine-tuned checkpoint. This is a useful result: medical-domain pretraining helps, but task-specific OpenI fine-tuning is still important for matching this dataset's image/report pairs.
+BioMedCLIP is stronger than vanilla OpenAI CLIP on exact OpenI retrieval, but weaker than the project-specific fine-tuned checkpoint.
+
+That comparison is not fair, though: only our checkpoint had been trained on OpenI. It confounds the
+initialization with the fact that one side got a fine-tuning budget and the other did not. Stage 4
+removes the confound.
+
+### Stage 4: BioMedCLIP fine-tuned on OpenI
+
+BioMedCLIP was fine-tuned on the same 2,554 training pairs with everything except `lr_encoders` held
+identical to `configs/clipnorm.yaml` (batch 64, 15 epochs, freeze 8 image blocks, cosine + warmup,
+same splits). Three LR arms were run on a Kaggle T4 (~81 min each).
+
+| Model | I→T R@1 | R@5 | R@10 | MedR | T→I R@1 | R@5 | R@10 | MedR | Gap |
+|-------|---------|-----|------|------|---------|-----|------|------|-----|
+| Vanilla OpenAI CLIP (zero-shot) | 0.00 | 1.56 | 3.12 | 162.50 | 0.31 | 2.81 | 4.06 | 166.00 | 0.0005 |
+| BioMedCLIP (zero-shot) | 1.56 | 5.31 | 8.12 | 120.00 | 1.25 | 6.25 | 8.75 | 108.50 | 0.0154 |
+| CLIP+ClinicalBERT (CLIP-norm, FT) | 3.75 | 12.81 | 20.62 | 49.50 | 4.38 | 11.88 | 19.38 | 47.00 | 0.1717 |
+| **BioMedCLIP FT (lr 1e-5)** | **6.25** | **17.50** | **27.19** | **45.50** | **5.31** | **17.50** | **23.75** | 46.00 | 0.0230 |
+| BioMedCLIP FT (lr 3e-6) | 5.00 | 17.19 | 25.62 | 46.50 | 4.06 | 14.69 | 23.12 | 47.50 | 0.0232 |
+| BioMedCLIP FT (lr 1e-6) | 3.12 | 12.50 | 20.00 | 67.00 | 2.50 | 13.44 | 18.12 | 58.50 | 0.0146 |
+
+The LR sweep exists so that a bad result could be attributed to the learning rate rather than to the
+backbone. It was not needed in that direction: the largest LR won, and the anticipated catastrophic
+forgetting did not appear — `lr1e5` improved for three epochs (val_loss 4.53 → 3.6278) before
+overfitting. The smallest LR clearly underfits.
+
+Training dynamics differ sharply from the CLIP+ClinicalBERT model:
+
+| Model | Best val_loss | Best epoch |
+|-------|---------------|------------|
+| CLIP+ClinicalBERT | 3.6404 | 9 |
+| BioMedCLIP (lr 1e-5) | 3.6278 | 3 |
+
+An already-aligned model exhausts what 2,554 pairs can teach it in a third of the epochs; by epoch 15
+val_loss reaches 4.2297, above the ln(64) = 4.159 random baseline.
+
+### Completing the 2x2 (I→T R@5)
+
+|  | zero-shot | fine-tuned on OpenI |
+|--|-----------|---------------------|
+| CLIP + ClinicalBERT | 1.56 | 12.81 |
+| **BioMedCLIP** | **5.31** | **17.50** |
+
+Both main effects are positive and do not interact destructively: fine-tuning helps in both rows,
+medical-domain pretraining helps in both columns, and the combination is best. Against the previous
+best checkpoint, BioMedCLIP FT improves I→T R@1 by 67%, R@5 by 37%, R@10 by 32%, and T→I R@5 by 47%.
+
+**Revised conclusion.** Stage 3 concluded that task-specific fine-tuning mattered more than
+medical-domain pretraining. That conclusion was an artifact of the unfair comparison. Given an equal
+fine-tuning budget on identical data, the medical-pretrained starting point wins on every ranking
+metric: the initialization matters more than the fine-tuning recipe.
+
+### The raw gap is not comparable across backbones
+
+BioMedCLIP FT retrieves better than the CLIP+ClinicalBERT checkpoint while showing a gap 7x smaller
+(0.0230 vs 0.1717). The metrics do not actually disagree — the raw gap is not scale-free:
+
+| Model | matched | random | gap | gap / random std |
+|-------|---------|--------|-----|------------------|
+| CLIP+ClinicalBERT FT | 0.2804 | 0.1087 | 0.1717 | 1.0965 |
+| BioMedCLIP FT (lr 1e-5) | 0.4173 | 0.3942 | 0.0230 | see note |
+
+BioMedCLIP's embeddings occupy a narrow cone: two unrelated image/report vectors already sit at 0.394
+cosine similarity. Absolute differences are therefore compressed while the *ranking* is unaffected.
+
+Use the raw gap only within one backbone — where it correctly separated the preprocessing ablations
+and correctly showed that vanilla CLIP (0.0005) has essentially no medical alignment. Across
+backbones, compare R@K/MedR, or the normalized gap (`gap / std of random scores`) that
+`scripts/stage3_medclip_diagnostic.py` now reports.
+
+### Remaining confounds
+
+Not everything is controlled, and the win should not be read as purely "medical pretraining":
+
+- **Image backbone**: BioMedCLIP is ViT-B/16, ours is ViT-B/32. Part of the gain comes from the finer
+  patch size. This cannot be separated without a B/16 version of the general-domain model.
+- **Text context length**: 256 (BioMedCLIP) vs 128 tokens. Minor — a typical OpenI caption is ~53
+  tokens, so few captions were truncated either way.
+- **Temperature**: BioMedCLIP keeps its pretrained `logit_scale` (~0.0117) instead of the configured
+  0.07. Replacing it would have destroyed the pretrained alignment, so it was deliberately kept.
 
 ### Qualitative retrieval examples
 

@@ -8,16 +8,21 @@ A medical vision-language learning project focused on aligning chest X-ray image
 
 ### Retrieval (OpenI test split, 320 samples)
 
-| Direction | R@1 | R@5 | R@10 | MedR |
-|-----------|-----|-----|------|------|
-| Image → Text (MedCLIP) | **3.44%** | **12.19%** | **18.75%** | **54** |
-| Image → Text (vanilla CLIP) | 0.31% | 0.94% | 2.81% | 162 |
-| Text → Image (MedCLIP) | **3.75%** | **11.88%** | **18.44%** | **52.5** |
-| Text → Image (vanilla CLIP) | 0.31% | 1.56% | 2.81% | 163 |
+| Model | I→T R@1 | R@5 | R@10 | MedR | T→I R@1 | R@5 | R@10 | MedR |
+|-------|---------|-----|------|------|---------|-----|------|------|
+| Vanilla OpenAI CLIP (zero-shot) | 0.00% | 1.56% | 3.12% | 162.5 | 0.31% | 2.81% | 4.06% | 166.0 |
+| BioMedCLIP (zero-shot) | 1.56% | 5.31% | 8.12% | 120.0 | 1.25% | 6.25% | 8.75% | 108.5 |
+| CLIP+ClinicalBERT (fine-tuned) | 3.75% | 12.81% | 20.62% | 49.5 | 4.38% | 11.88% | 19.38% | 47.0 |
+| **BioMedCLIP (fine-tuned)** | **6.25%** | **17.50%** | **27.19%** | **45.5** | **5.31%** | **17.50%** | **23.75%** | **46.0** |
 
-Fine-tuning on radiology report pairs improves Recall@1 by ~11x and cuts median rank from 162 → 54 over the vanilla CLIP baseline.
+Two findings, in order of how much they move the numbers:
+
+1. **Fine-tuning on radiology report pairs is what creates medical alignment at all.** Vanilla CLIP sits exactly at the random baseline (R@5 1.56% for 320 candidates); fine-tuning takes the same architecture to 12.81% and cuts median rank from 162 → 49.5.
+2. **The starting point then matters more than the recipe.** Fine-tuning BioMedCLIP on the identical 2,554 pairs with identical hyperparameters beats our CLIP+ClinicalBERT checkpoint by 67% on R@1 and 37% on R@5. An earlier version of this README claimed the opposite — that comparison was unfair, because only our model had been trained. See [results.md](results.md) for the full 2x2 and the remaining confound (ViT-B/16 vs B/32).
 
 ### Context vs published methods
+
+All NIH zero-shot numbers below are for the CLIP+ClinicalBERT checkpoint. The fine-tuned BioMedCLIP model has been evaluated on retrieval only; its zero-shot classification is not measured yet.
 
 | Model | Training pairs | Zero-shot Macro AUC (NIH) |
 |-------|---------------|--------------------------|
@@ -212,7 +217,26 @@ python src/retrieval.py --checkpoint checkpoints/best.pt --indiana-dir /path/to/
 
 # Zero-shot classification on NIH
 python src/zeroshot.py --checkpoint checkpoints/best.pt --prompt patient
+
+# Retrieval + matched-vs-random diagnostic, either backbone
+python3 scripts/stage3_medclip_diagnostic.py \
+    --config configs/clipnorm.yaml --checkpoint checkpoints_clipnorm/best.pt
+python3 scripts/stage3_medclip_diagnostic.py \
+    --config configs/biomedclip_ft_lr1e5.yaml \
+    --checkpoint checkpoints_biomedclip_lr1e5/best.pt \
+    --out stage4_biomedclip_ft_diagnostic.md
 ```
+
+## Fine-tuning BioMedCLIP (Stage 4)
+
+```bash
+python3 src/train.py --config configs/biomedclip_ft_lr1e5.yaml --indiana-dir /path/to/openi
+```
+
+The three `configs/biomedclip_ft_lr*.yaml` arms differ only in `lr_encoders`. ViT-B/16 is roughly 4x
+the compute of ViT-B/32 per image, so these were run on a Kaggle T4 (~81 min per arm) via
+[notebooks/kaggle_biomedclip/](notebooks/kaggle_biomedclip/), which also works with no Kaggle setup
+beyond GPU + Internet — it clones this repo and pulls OpenI with kagglehub.
 
 ---
 

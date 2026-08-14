@@ -1,4 +1,8 @@
-"""Evaluate fine-tuned MedCLIP retrieval and matched-vs-random alignment."""
+"""Evaluate a fine-tuned checkpoint's retrieval and matched-vs-random alignment.
+
+Works for both backbones (`--backbone medclip|biomedclip`); the BioMedCLIP wrapper
+brings its own preprocessing and tokenizer.
+"""
 
 import argparse
 from pathlib import Path
@@ -7,14 +11,13 @@ import sys
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from dataset import OpenIDataset  # noqa: E402
-from model import MedCLIP  # noqa: E402
+from train import build_backbone  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -26,6 +29,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--indiana-dir", default=None)
     parser.add_argument("--image-normalization", choices=["imagenet", "clip"], default=None,
                         help="Override cfg data.image_normalization for preprocessing ablations.")
+    parser.add_argument("--backbone", choices=["medclip", "biomedclip"], default=None,
+                        help="Override cfg model.backbone. BioMedCLIP ignores the normalization flag.")
     parser.add_argument("--out", default="stage3_medclip_diagnostic.md")
     return parser.parse_args()
 
@@ -72,17 +77,24 @@ def matched_random_stats(similarity: np.ndarray, seed: int = 42) -> dict[str, fl
     if fixed_points.any():
         random_cols[fixed_points] = (random_cols[fixed_points] + 1) % n
     random_scores = similarity[np.arange(n), random_cols]
+    gap = float(matched.mean() - random_scores.mean())
+    random_std = float(random_scores.std())
     return {
         "matched_mean": float(matched.mean()),
         "matched_std": float(matched.std()),
         "random_mean": float(random_scores.mean()),
-        "random_std": float(random_scores.std()),
-        "gap": float(matched.mean() - random_scores.mean()),
+        "random_std": random_std,
+        "gap": gap,
+        # The raw gap is not scale-free: models whose embeddings occupy a narrow
+        # cone (BioMedCLIP: random pairs already at ~0.39 cosine) show a small
+        # absolute gap even when they rank well. Dividing by the spread of the
+        # random scores gives an effect size that is comparable across backbones.
+        "gap_normalized": gap / random_std if random_std > 0 else float("nan"),
     }
 
 
 @torch.no_grad()
-def encode_dataset(model: MedCLIP, loader: DataLoader, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+def encode_dataset(model: torch.nn.Module, loader: DataLoader, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     model.eval()
     image_embeddings = []
     text_embeddings = []
@@ -134,8 +146,13 @@ def write_report(
         f"| Random mismatched pair | {stats['random_mean']:.4f} | {stats['random_std']:.4f} |",
         "",
         f"Matched-minus-random gap: `{stats['gap']:.4f}`",
+        f"Normalized gap (gap / random std): `{stats['gap_normalized']:.4f}`",
         "",
         "Interpretation: a positive gap means paired X-ray/report examples are closer than random mismatches in the learned shared embedding space.",
+        "",
+        "Compare the raw gap only within one backbone. Across backbones use the normalized gap or the",
+        "ranking metrics: the raw gap scales with how tightly the embeddings are packed, so a model whose",
+        "embeddings sit in a narrow cone can rank better while showing a much smaller absolute gap.",
     ]
     out_path.write_text("\n".join(lines) + "\n")
 
@@ -148,29 +165,25 @@ def main() -> None:
         cfg["data"]["indiana_dir"] = args.indiana_dir
     if args.image_normalization:
         cfg["data"]["image_normalization"] = args.image_normalization
+    if args.backbone:
+        cfg["model"]["backbone"] = args.backbone
     if not Path(args.checkpoint).exists():
         raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
 
     device = get_device()
     print(f"Using device: {device}")
 
-    tokenizer = AutoTokenizer.from_pretrained(cfg["model"]["text_encoder"])
+    model, backbone_kwargs = build_backbone(cfg)
+    model.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
+    model = model.to(device)
+
     dataset = OpenIDataset(
         cfg["data"]["indiana_dir"],
-        tokenizer,
         split=args.split,
-        image_size=cfg["data"]["image_size"],
-        image_normalization=cfg["data"].get("image_normalization", "imagenet"),
+        **backbone_kwargs["val"],
         **openi_kwargs(cfg),
     )
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
-
-    model = MedCLIP(
-        cfg["model"]["embed_dim"],
-        cfg["model"]["freeze_image_layers"],
-        cfg["training"]["temperature"],
-    ).to(device)
-    model.load_state_dict(torch.load(args.checkpoint, map_location=device))
 
     image_embeddings, text_embeddings = encode_dataset(model, loader, device)
     similarity = (image_embeddings @ text_embeddings.T).numpy()
@@ -191,6 +204,7 @@ def main() -> None:
     print(f"  matched mean: {stats['matched_mean']:.4f}")
     print(f"  random mean:  {stats['random_mean']:.4f}")
     print(f"  gap:          {stats['gap']:.4f}")
+    print(f"  gap/std:      {stats['gap_normalized']:.4f}")
     print(f"\nWrote report -> {args.out}")
 
 

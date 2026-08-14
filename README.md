@@ -18,7 +18,7 @@ A medical vision-language learning project focused on aligning chest X-ray image
 Two findings, in order of how much they move the numbers:
 
 1. **Fine-tuning on radiology report pairs is what creates medical alignment at all.** Vanilla CLIP sits exactly at the random baseline (R@5 1.56% for 320 candidates); fine-tuning takes the same architecture to 12.81% and cuts median rank from 162 → 49.5.
-2. **The starting point then matters more than the recipe.** Fine-tuning BioMedCLIP on the identical 2,554 pairs with identical hyperparameters beats our CLIP+ClinicalBERT checkpoint by 67% on R@1 and 37% on R@5. An earlier version of this README claimed the opposite — that comparison was unfair, because only our model had been trained. See [results.md](results.md) for the full 2x2 and the remaining confound (ViT-B/16 vs B/32).
+2. **The starting point then matters more than the recipe** — but the retrieval table is too small to prove it. Fine-tuning BioMedCLIP on the identical 2,554 pairs with identical hyperparameters raises R@1 by 67% and R@5 by 37%. A paired McNemar test over all 320 queries puts that at p = 0.20 (42 queries gained a top-5 hit, 30 lost one): consistent in direction, not significant. The claim rests instead on cross-dataset zero-shot, where all seven prompt templates improve by 0.075–0.196 Macro AUC. An earlier version of this README made the reverse comparison — fine-tuned against zero-shot — which was unfair to BioMedCLIP. See [results.md](results.md) for the 2x2, the paired tests, and the remaining confound (ViT-B/16 vs B/32).
 
 ### Context vs published methods
 

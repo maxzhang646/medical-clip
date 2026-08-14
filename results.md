@@ -95,8 +95,9 @@ is not statistically meaningful: learning rate between 1e-5 and 3e-6, and epoch 
 - lr 1e-6 underfits (12.50, ~2 SE below the others)
 - 15 epochs ends above the random baseline in val_loss while 5 epochs stays flat — the shorter budget
   is not better, it is *safer*
-- BioMedCLIP FT over CLIP+ClinicalBERT FT (17.50 vs 12.81) is ~2.2 SE, on a paired test set, so this
-  one holds
+
+The backbone comparison itself is examined properly in Stage 6 below, with a paired test rather than
+an eyeballed standard error — and it does not survive that test on retrieval alone.
 
 Peak at epoch 3 under both a 15-epoch and a 5-epoch cosine schedule points at the data rather than the
 schedule: roughly three passes exhaust what 2,554 pairs can teach an already-aligned model.
@@ -194,6 +195,56 @@ Stage 3 also includes a t-SNE visualization of the OpenI test image/report embed
 ![Stage 3 Embedding t-SNE](figures/stage3_embedding_tsne.png)
 
 The visualization shows image embeddings and report embeddings in the same projected space. The two modalities still form visibly different regions, which suggests the learned shared space is only partially aligned. This is consistent with the modest retrieval metrics and reinforces that the current model is a learning prototype rather than a strong medical retriever.
+
+
+### Stage 6: paired comparison, and how much of the retrieval win is real
+
+`scripts/stage6_compare_checkpoints.py` compares the ground-truth rank of every test query under both
+checkpoints instead of reading two summary numbers side by side.
+
+A first attempt got this wrong in an instructive way. Example cases were chosen from the
+CLIP+ClinicalBERT model's own hits and misses, then both models were run on them. BioMedCLIP looked
+dramatically worse on the first model's wins and dramatically better on its losses — pure regression
+to the mean, produced entirely by selecting cases on one model's performance. Query selection has to
+be independent of both models, or the comparison has to cover all of them.
+
+Over all 320 queries (BioMedCLIP FT, lr 1e-5, 5 epochs):
+
+| | Image → Text | Text → Image |
+|---|---|---|
+| improved under BioMedCLIP | 160 (50.0%) | 152 (47.5%) |
+| degraded | 155 (48.4%) | 165 (51.6%) |
+| median rank | 49.5 → 45.5 | 47.0 → 46.0 |
+| sign test z | +0.28 | −0.73 |
+
+The sign test is not the right test for R@K — it counts rank 250 → 260 the same as 6 → 4, while R@K
+only cares about crossings of the top-K threshold. The matched test for a threshold metric is McNemar
+on the "made it into top K" indicator:
+
+| Direction | Metric | A → B | gained | lost | χ² | p |
+|-----------|--------|-------|--------|------|----|---|
+| I→T | R@1 | 3.75 → 5.94 | 16 | 9 | 1.44 | 0.23 |
+| I→T | R@5 | 12.81 → 16.56 | 42 | 30 | 1.68 | 0.20 |
+| I→T | R@10 | 20.62 → 26.25 | 58 | 40 | 2.95 | 0.09 |
+| T→I | R@1 | 4.38 → 4.06 | 12 | 13 | 0.00 | 1.00 |
+| T→I | R@5 | 11.88 → 15.62 | 40 | 28 | 1.78 | 0.18 |
+| T→I | R@10 | 19.38 → 24.38 | 59 | 43 | 2.21 | 0.14 |
+
+**No comparison reaches p < 0.05.** Repeating it with the lr 3e-6 checkpoint (the one with the highest
+raw R@5, 17.50) gives the same verdict: the best is I→T R@5 at χ² = 2.61, p = 0.11.
+
+The reason is visible in the gained/lost columns: gaining 42 top-5 hits while losing 30 is a net +12
+against a lot of churn. A 320-query test set cannot resolve a 4-point R@5 difference. The earlier
+claim in this file — that the retrieval win was "~2.2 SE, so this one holds" — came from an
+independent-sample standard error plus an assumption that pairing would only strengthen it. The
+paired test says otherwise.
+
+**What this changes.** The direction is consistent (gained > lost in 10 of 12 threshold comparisons
+across both checkpoints), but *the retrieval numbers alone do not establish that the medical-pretrained
+backbone is better.* The evidence for that claim rests on the NIH transfer results, which are on 2,000
+images and move together across all seven prompt templates (+0.075 to +0.196 Macro AUC, Edema
+0.4729 → 0.7882). Cross-dataset zero-shot is also the harder test, so this is the stronger leg to
+stand on — but the retrieval table should be read as consistent-but-underpowered, not as proof.
 
 ## 2. Zero-shot Classification (NIH ChestX-ray14, 2000 samples)
 

@@ -4,16 +4,16 @@ import argparse
 from pathlib import Path
 import sys
 
+import numpy as np
 import torch
 import yaml
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from dataset import OpenIDataset  # noqa: E402
-from model import MedCLIP  # noqa: E402
+from train import build_backbone  # noqa: E402
 
 
 def get_device() -> torch.device:
@@ -36,8 +36,14 @@ def parse_args() -> argparse.Namespace:
                         choices=["image-to-text", "text-to-image"])
     parser.add_argument("--selection", default="mixed", choices=["mixed", "even"],
                         help="mixed selects successful and failed retrieval cases; even samples evenly by index.")
+    parser.add_argument("--query-indices", default=None,
+                        help="Comma-separated query indices, overriding --selection. Required to "
+                             "compare two checkpoints case by case: otherwise each model picks its "
+                             "own successes and failures and the outputs are not comparable.")
     parser.add_argument("--indiana-dir", default=None,
                         help="Override cfg data.indiana_dir when data lives outside the repo.")
+    parser.add_argument("--backbone", choices=["medclip", "biomedclip"], default=None,
+                        help="Override cfg model.backbone.")
     parser.add_argument("--out", default="stage3_retrieval_examples.md")
     return parser.parse_args()
 
@@ -56,7 +62,7 @@ def openi_kwargs(cfg: dict) -> dict:
 
 
 @torch.no_grad()
-def encode_dataset(model: MedCLIP, loader: DataLoader, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+def encode_dataset(model: torch.nn.Module, loader: DataLoader, device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     model.eval()
     image_embeddings = []
     text_embeddings = []
@@ -147,7 +153,10 @@ def write_examples(
 
 
 def compute_ground_truth_ranks(similarity: torch.Tensor) -> torch.Tensor:
-    ranks = torch.argsort(similarity, dim=1, descending=True)
+    # Rank in numpy, matching scripts/stage3_medclip_diagnostic.py. torch.argsort and
+    # np.argsort(-x) break float ties differently, which was enough to move one
+    # borderline case out of 320 and make the two scripts disagree by 0.31pp.
+    ranks = torch.from_numpy(np.argsort(-similarity.numpy(), axis=1))
     ground_truth = torch.arange(similarity.size(0))
     return (ranks == ground_truth[:, None]).nonzero()[:, 1] + 1
 
@@ -180,30 +189,26 @@ def main() -> None:
         cfg = yaml.safe_load(f)
     if args.indiana_dir:
         cfg["data"]["indiana_dir"] = args.indiana_dir
+    if args.backbone:
+        cfg["model"]["backbone"] = args.backbone
     if not Path(args.checkpoint).exists():
         raise FileNotFoundError(f"Checkpoint not found: {args.checkpoint}")
 
     device = get_device()
     print(f"Using device: {device}")
 
-    tokenizer = AutoTokenizer.from_pretrained(cfg["model"]["text_encoder"])
+    model, backbone_kwargs = build_backbone(cfg)
+    model.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
+    model = model.to(device)
+
     dataset = OpenIDataset(
         cfg["data"]["indiana_dir"],
-        tokenizer,
         split=args.split,
-        image_size=cfg["data"]["image_size"],
-        image_normalization=cfg["data"].get("image_normalization", "imagenet"),
+        **backbone_kwargs["val"],
         **openi_kwargs(cfg),
     )
     dataset.split_name = args.split
     loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
-
-    model = MedCLIP(
-        cfg["model"]["embed_dim"],
-        cfg["model"]["freeze_image_layers"],
-        cfg["training"]["temperature"],
-    ).to(device)
-    model.load_state_dict(torch.load(args.checkpoint, map_location=device))
 
     image_embeddings, text_embeddings = encode_dataset(model, loader, device)
     base_similarity = image_embeddings @ text_embeddings.T
@@ -211,8 +216,15 @@ def main() -> None:
     gt_ranks = compute_ground_truth_ranks(similarity)
     recall_at_k = (gt_ranks <= args.top_k).float().mean().item() * 100
 
-    num_queries = min(args.num_queries, len(dataset))
-    query_indices = select_query_indices(gt_ranks, args.top_k, num_queries, args.selection)
+    if args.query_indices:
+        query_indices = [int(i) for i in args.query_indices.split(",") if i.strip() != ""]
+        out_of_range = [i for i in query_indices if not 0 <= i < len(dataset)]
+        if out_of_range:
+            raise ValueError(f"--query-indices out of range for {len(dataset)} samples: {out_of_range}")
+    else:
+        num_queries = min(args.num_queries, len(dataset))
+        query_indices = select_query_indices(gt_ranks, args.top_k, num_queries, args.selection)
+    print(f"Query indices: {','.join(str(i) for i in query_indices)}")
 
     write_examples(
         Path(args.out),

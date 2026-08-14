@@ -78,6 +78,29 @@ backbone. It was not needed in that direction: the largest LR won, and the antic
 forgetting did not appear — `lr1e5` improved for three epochs (val_loss 4.53 → 3.6278) before
 overfitting. The smallest LR clearly underfits.
 
+Stage 5 added a fourth run: the same lr 1e-5 with the epoch budget cut from 15 to 5 (26 min instead
+of 81).
+
+| Run | I→T R@1 | R@5 | R@10 | MedR | T→I R@5 | Best val_loss | Best epoch |
+|-----|---------|-----|------|------|---------|---------------|------------|
+| lr 1e-5, 15 epochs | 6.25 | 17.50 | 27.19 | 45.50 | 17.50 | 3.6278 | 3 |
+| lr 1e-5, 5 epochs | 5.94 | 16.56 | 26.25 | **45.00** | 15.62 | 3.6504 | 3 |
+
+**How large is a real difference here?** With 320 test queries, the standard error on R@5 near 17% is
+`sqrt(0.17 x 0.83 / 320)` ≈ 2.1 percentage points. Every gap in the table above is inside one standard
+error, as is lr1e5 vs lr3e6 (17.50 vs 17.19). So the ranking *within* the fine-tuned BioMedCLIP runs
+is not statistically meaningful: learning rate between 1e-5 and 3e-6, and epoch budget between 5 and
+15, are all equivalent at this sample size. What does clear the bar:
+
+- lr 1e-6 underfits (12.50, ~2 SE below the others)
+- 15 epochs ends above the random baseline in val_loss while 5 epochs stays flat — the shorter budget
+  is not better, it is *safer*
+- BioMedCLIP FT over CLIP+ClinicalBERT FT (17.50 vs 12.81) is ~2.2 SE, on a paired test set, so this
+  one holds
+
+Peak at epoch 3 under both a 15-epoch and a 5-epoch cosine schedule points at the data rather than the
+schedule: roughly three passes exhaust what 2,554 pairs can teach an already-aligned model.
+
 Training dynamics differ sharply from the CLIP+ClinicalBERT model:
 
 | Model | Best val_loss | Best epoch |
@@ -179,11 +202,12 @@ The visualization shows image embeddings and report embeddings in the same proje
 | Model | Training pairs | Macro AUC (NIH) | Notes |
 |-------|---------------|-----------------|-------|
 | Vanilla CLIP (baseline) | 400M (general) | ~0.50 | No medical fine-tuning |
-| **Ours (MedCLIP, patient prompt)** | **2,554** | **0.589** | OpenI only |
+| Ours, CLIP+ClinicalBERT (patient prompt) | 2,554 | 0.589 | OpenI only |
+| **Ours, BioMedCLIP FT (clinical prompt)** | **2,554** | **0.682** | OpenI only |
 | MedCLIP — Wang et al., 2022 | ~200K | ~0.730 | Mixed medical datasets |
 | CheXzero — Tiu et al., 2022 | ~227K | ~0.875 | MIMIC-CXR reports |
 
-Direct comparison is approximate — published methods use different test set sizes and class subsets. The gap narrows substantially when normalized by training data: our model uses **90× fewer pairs** than CheXzero and achieves 67% of its AUC.
+Direct comparison is approximate — published methods use different test set sizes and class subsets. The gap narrows substantially when normalized by training data: with **89× fewer pairs** than CheXzero we reach 78% of its AUC, and we are now within 0.05 of MedCLIP, which used ~78× more pairs.
 
 ### Per-disease AUC by prompt template
 
@@ -206,6 +230,43 @@ Direct comparison is approximate — published methods use different test set si
 - Ensemble does NOT win — averaging diverse styles causes negative interference
 - `pos_neg` (positive + negative templates averaged) is the worst strategy: Macro AUC 0.4496, barely above `simple` (0.4487). Averaging in "No evidence of X" pulls the class embedding toward no-disease space, hurting recall across the board — Effusion drops to 0.299 (worst of any prompt/class combination)
 
+### Stage 5: the same prompt ablation on the BioMedCLIP backbone
+
+The fine-tuned BioMedCLIP checkpoint (lr 1e-5, 5 epochs) was evaluated on the *same* seed-42
+2,000-image subset, so the numbers are directly comparable.
+
+| Prompt | Atelectasis | Cardiomegaly | Consolidation | Edema | Effusion | Infiltration | Pneumonia | Pneumothorax | Macro AUC | vs CLIP+ClinicalBERT |
+|--------|-------------|--------------|---------------|-------|----------|--------------|-----------|--------------|-----------|----------------------|
+| simple | 0.5729 | 0.7788 | 0.6826 | 0.4682 | 0.7780 | 0.3737 | 0.6744 | 0.5935 | 0.6153 | +0.167 |
+| findings | 0.6675 | 0.7769 | 0.6914 | 0.7537 | 0.7473 | 0.4788 | 0.6636 | 0.5961 | 0.6719 | +0.196 |
+| **clinical** | 0.6358 | 0.7714 | 0.6423 | **0.7882** | 0.7695 | 0.4630 | 0.7076 | 0.6813 | **0.6824** | +0.155 |
+| patient | 0.6934 | 0.7866 | 0.6529 | 0.6249 | 0.7636 | 0.4152 | 0.6894 | 0.6876 | 0.6642 | +0.075 |
+| radiologist | 0.6906 | 0.7876 | 0.6680 | 0.6027 | 0.7818 | 0.3995 | 0.6430 | 0.6600 | 0.6542 | +0.169 |
+| ensemble | 0.6721 | 0.7822 | 0.6897 | 0.6862 | 0.7742 | 0.4043 | 0.7026 | 0.6494 | 0.6701 | +0.182 |
+| pos_neg | 0.6410 | 0.7716 | 0.5189 | 0.4664 | 0.7251 | 0.3778 | 0.6339 | 0.5960 | 0.5913 | +0.142 |
+
+All seven templates improve, and the best Macro AUC goes 0.589 -> 0.682. More importantly, the
+backbone change acts as an independent test of the three claims made from the first ablation:
+
+| Claim from the CLIP+ClinicalBERT ablation | Survives the backbone change? |
+|-------------------------------------------|-------------------------------|
+| `patient` is the best template | **No.** Best is now `clinical` (0.6824); `patient` drops to 4th (0.6642). |
+| `ensemble` loses to the best single prompt through negative interference | **No.** `ensemble` is now 3rd of 7, above `patient` and `radiologist`. |
+| `pos_neg` is the worst strategy | **Yes.** Last on both backbones (0.4496, 0.5913). |
+
+So two of the three were properties of one checkpoint, not of prompt design. Only the negative
+result generalizes: averaging "No evidence of {disease}" into the class embedding pulls it toward
+no-disease space, and that hurts regardless of backbone.
+
+A fourth observation is new: **prompt sensitivity shrinks as the representation improves.** The
+spread across templates falls from 0.140 (CLIP+ClinicalBERT) to 0.091 (BioMedCLIP). Prompt
+engineering matters most when the visual representation is weak.
+
+**Statistical caveat.** With 2,000 images, per-class AUCs for rare findings have wide error bars --
+roughly +/-0.06 for Edema (~40 positives) and +/-0.09 for Pneumonia (~26). Single-class differences
+below ~0.1 should not be read as real. The Macro AUC gains (+0.075 to +0.196 across all seven
+templates) and the Infiltration result (~340 positives, SE ~0.027) are well outside that range.
+
 ## 3. Edema Failure Analysis
 
 Edema is the only class with best AUC below 0.5 (0.473), effectively random. Three compounding causes:
@@ -217,6 +278,19 @@ Edema is the only class with best AUC below 0.5 (0.473), effectively random. Thr
 **NIH label noise.** NIH labels are NLP-extracted from radiology reports. Radiologists describe pulmonary edema using varied terminology ("pulmonary congestion", "vascular engorgement", "interstitial edema") that NLP tools miss, producing noisier ground truth for Edema than for well-defined classes like Cardiomegaly.
 
 **Prompt engineering cannot fix this.** Even the best prompt (`patient`) only reaches AUC 0.473 — the ceiling is set by the quality of the learned visual representation, not the inference-time text. Fixing Edema would require more training data (e.g. MIMIC-CXR) or explicit oversampling of Edema-positive reports.
+
+> **Corrected by Stage 5.** The diagnosis above was right and the prescription was too narrow.
+> The ceiling *was* the visual representation — but a better pretrained backbone lifted it without
+> any new data. On the same 2,554 OpenI pairs, fine-tuned BioMedCLIP reaches **Edema AUC 0.7882**
+> (`clinical` prompt) versus 0.4729 here, and Effusion goes 0.4785 -> 0.7818. MIMIC-CXR was not
+> needed. This also downgrades the first two causes listed above: training-data scarcity and visual
+> overlap with neighbouring classes cannot be the binding constraints, since the same data and the
+> same overlapping classes now yield a strong Edema AUC. What was actually missing was a chest-X-ray
+> representation good enough to encode the finding at all.
+>
+> Infiltration replaces Edema as the one systematically broken class: 0.374–0.479 across all seven
+> templates, below random everywhere, and with ~340 positives the error bars are too tight for that
+> to be noise.
 
 ## 4. Training
 

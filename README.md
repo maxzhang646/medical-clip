@@ -22,20 +22,46 @@ Two findings, in order of how much they move the numbers:
 
 ### Context vs published methods
 
-All NIH zero-shot numbers below are for the CLIP+ClinicalBERT checkpoint. The fine-tuned BioMedCLIP model has been evaluated on retrieval only; its zero-shot classification is not measured yet.
-
 | Model | Training pairs | Zero-shot Macro AUC (NIH) |
 |-------|---------------|--------------------------|
 | Vanilla CLIP | 400M (general) | ~0.50 |
-| **Ours (patient prompt)** | **2,554** | **0.589** |
+| Ours — CLIP+ClinicalBERT (patient prompt) | 2,554 | 0.589 |
+| **Ours — BioMedCLIP FT (clinical prompt)** | **2,554** | **0.682** |
 | MedCLIP — Wang et al., 2022 | ~200K | ~0.730 |
 | CheXzero — Tiu et al., 2022 | ~227K | ~0.875 |
 
-Our model uses 90× fewer training pairs than CheXzero and achieves 67% of its AUC — the gap is explained by data scale, not architecture.
+With **89× fewer training pairs** than CheXzero we reach 78% of its AUC, and we are within 0.05 of MedCLIP, which used ~78× more pairs.
 
 ### Zero-shot Classification (NIH ChestX-ray14, 2000 samples)
 
-AUC-ROC by prompt template across 8 disease classes:
+The prompt ablation was run on both backbones, on the same seed-42 image subset. Running it twice is
+what makes it informative: a pattern that appears on one checkpoint is a property of that checkpoint
+until a second one agrees.
+
+| Prompt | CLIP+ClinicalBERT | BioMedCLIP FT | Δ |
+|--------|-------------------|---------------|---|
+| simple | 0.4487 | 0.6153 | +0.167 |
+| findings | 0.4762 | 0.6719 | +0.196 |
+| **clinical** | 0.5273 | **0.6824** | +0.155 |
+| patient | **0.5889** | 0.6642 | +0.075 |
+| radiologist | 0.4854 | 0.6542 | +0.169 |
+| ensemble | 0.4882 | 0.6701 | +0.182 |
+| pos_neg | 0.4496 | 0.5913 | +0.142 |
+
+| Claim from the first ablation | Holds on the second backbone? |
+|-------------------------------|-------------------------------|
+| `patient` is the best template | **No** — `clinical` wins; `patient` falls to 4th |
+| `ensemble` loses through negative interference | **No** — `ensemble` is 3rd of 7 |
+| `pos_neg` is the worst strategy | **Yes** — last on both |
+
+Two of the three were properties of one model. Only the negative result generalizes: averaging
+"No evidence of {disease}" into the class embedding pulls it toward no-disease space. A fourth
+pattern is new — prompt sensitivity *shrinks* as the representation improves (spread across templates
+0.140 → 0.091), so prompt engineering matters most when the visual encoder is weak.
+
+Per-backbone detail below; full numbers and error bars in [results.md](results.md).
+
+#### CLIP+ClinicalBERT — AUC-ROC by prompt template
 
 | Prompt | Atelectasis | Cardiomegaly | Consolidation | Edema | Effusion | Infiltration | Pneumonia | Pneumothorax | **Macro AUC** |
 |--------|-------------|--------------|---------------|-------|----------|--------------|-----------|--------------|---------------|
@@ -48,14 +74,31 @@ AUC-ROC by prompt template across 8 disease classes:
 
 ![Prompt Ablation](figures/prompt_ablation.png)
 
-**Key findings:**
-- `"A patient with {disease}"` is the best template for 6/8 classes (Macro AUC 0.589)
-- Consolidation shows the largest prompt sensitivity: 0.367 → 0.630 (+0.26 AUC)
-- Atelectasis and Cardiomegaly are prompt-insensitive (range < 0.03)
-- Ensemble averaging does **not** win — negative interference between prompt styles hurts more than diversity helps
-- Edema is the hardest class (best AUC 0.473), likely due to underrepresentation in OpenI training reports
+**Findings that survived the second backbone:**
+- Cardiomegaly is prompt-insensitive on both models (range < 0.03 and < 0.02)
+- `pos_neg` is the worst strategy on both
+
+**Findings that did not:**
+- `patient` being best, and `ensemble` losing to the best single prompt, are specific to this checkpoint
+- Edema was the hardest class here (best 0.473, below random) and was attributed to under-representation in OpenI. Fine-tuned BioMedCLIP reaches **0.788** on the same data, so the constraint was the visual representation, not the training reports. Infiltration is the class that is broken on both (0.374–0.530)
 
 ![ROC Curves](figures/roc_curves.png)
+
+#### BioMedCLIP fine-tuned — AUC-ROC by prompt template
+
+| Prompt | Atelectasis | Cardiomegaly | Consolidation | Edema | Effusion | Infiltration | Pneumonia | Pneumothorax | **Macro AUC** |
+|--------|-------------|--------------|---------------|-------|----------|--------------|-----------|--------------|---------------|
+| simple | 0.573 | 0.779 | 0.683 | 0.468 | 0.778 | 0.374 | 0.674 | 0.594 | 0.615 |
+| findings | 0.668 | 0.777 | 0.691 | 0.754 | 0.747 | 0.479 | 0.664 | 0.596 | 0.672 |
+| **clinical** | 0.636 | 0.771 | 0.642 | **0.788** | 0.770 | 0.463 | **0.708** | **0.681** | **0.682** |
+| patient | **0.693** | 0.787 | 0.653 | 0.625 | 0.764 | 0.415 | 0.689 | 0.688 | 0.664 |
+| radiologist | 0.691 | **0.788** | 0.668 | 0.603 | **0.782** | 0.400 | 0.643 | 0.660 | 0.654 |
+| ensemble | 0.672 | 0.782 | **0.690** | 0.686 | 0.774 | 0.404 | 0.703 | 0.649 | 0.670 |
+| pos_neg | 0.641 | 0.772 | 0.519 | 0.466 | 0.725 | 0.378 | 0.634 | 0.596 | 0.591 |
+
+Per-class AUCs for rare findings carry wide error bars at 2,000 images (≈ ±0.06 for Edema, ±0.09 for
+Pneumonia), so single-class differences under ~0.1 are not meaningful. Infiltration (~340 positives,
+SE ≈ 0.027) is genuinely below random on every template.
 
 ---
 

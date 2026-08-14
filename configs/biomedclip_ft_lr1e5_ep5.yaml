@@ -1,0 +1,55 @@
+# BioMedCLIP fine-tuned on OpenI -- winning arm (lr 1e-5) with the epoch budget cut.
+# Everything except lr_encoders is held identical to configs/clipnorm.yaml so the
+# comparison against the CLIP+ClinicalBERT checkpoint stays controlled.
+# The 15-epoch run peaked at epoch 3 and ended above the ln(64) random baseline, so
+# the budget is cut to 5. This is NOT a reproduction of that checkpoint: cosine over
+# 5 epochs anneals fully, while the 15-epoch schedule was still at a high LR by
+# epoch 3. Expect a different -- probably better -- result, reported as its own row.
+model:
+  backbone: biomedclip
+  model_name: "hf-hub:microsoft/BiomedCLIP-PubMedBERT_256-vit_base_patch16_224"
+  context_length: 256
+  image_encoder: ViT-B/16          # BioMedCLIP's own tower (recorded, not configurable)
+  text_encoder: PubMedBERT         # BioMedCLIP's own tower (recorded, not configurable)
+  embed_dim: 512
+  freeze_image_layers: 8
+  freeze_text_layers: 0
+
+training:
+  batch_size: 64                   # must match clipnorm.yaml: InfoNCE negatives scale with it
+  epochs: 5
+  optimizer: AdamW
+  lr_projections: 1.0e-4           # BioMedCLIP has no new projections; this hits logit_scale only
+  lr_encoders: 1.0e-5
+  warmup_ratio: 0.1
+  lr_schedule: cosine
+  temperature: 0.07                # ignored: BioMedCLIP keeps its pretrained logit_scale (~0.012)
+  fp16: true
+
+data:
+  indiana_dir: data/indiana
+  nih_dir: data/nih
+  image_size: 224                  # ignored: BioMedCLIP supplies its own preprocessing
+  image_normalization: clip        # ignored: BioMedCLIP supplies its own preprocessing
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  split_seed: 42
+  split_dir: splits
+  stratify_by: uid
+
+eval:
+  recall_at_k: [1, 5, 10]
+  nih_classes:
+    - Atelectasis
+    - Cardiomegaly
+    - Consolidation
+    - Edema
+    - Effusion
+    - Infiltration
+    - Pneumonia
+    - Pneumothorax
+
+paths:
+  checkpoint_dir: checkpoints_biomedclip_lr1e5_ep5
+  log_dir: logs

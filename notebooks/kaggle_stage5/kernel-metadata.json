@@ -1,0 +1,17 @@
+{
+  "id": "maxzhang646/biomedclip-nih-zeroshot",
+  "title": "BioMedCLIP NIH Zeroshot",
+  "code_file": "05_biomedclip_nih_zeroshot.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "nih-chest-xrays/data",
+    "raddar/chest-xrays-indiana-university"
+  ],
+  "competition_sources": [],
+  "kernel_sources": []
+}

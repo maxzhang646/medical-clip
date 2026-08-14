@@ -123,12 +123,16 @@ def build_tokenize_fn(model_name: str = DEFAULT_MODEL,
     if pad_id is None:
         pad_id = 0
 
-    def tokenize(caption: str) -> dict[str, torch.Tensor]:
+    def tokenize(caption) -> dict[str, torch.Tensor]:
+        """A single caption returns 1-D tensors (dataset use); a list keeps the batch
+        dimension (prompt encoding for zero-shot)."""
+        is_batch = not isinstance(caption, str)
+        texts = list(caption) if is_batch else caption
         try:
-            ids = tokenizer(caption, context_length=context_length)
+            ids = tokenizer(texts, context_length=context_length)
         except TypeError:  # older open_clip signatures
-            ids = tokenizer(caption)
-        if ids.dim() == 2:
+            ids = tokenizer(texts)
+        if not is_batch and ids.dim() == 2:
             ids = ids[0]
         return {"input_ids": ids, "attention_mask": (ids != pad_id).long()}
 

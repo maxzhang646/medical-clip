@@ -154,7 +154,7 @@ data/indiana/
         └── *.png
 ```
 
-If your OpenI dataset lives outside the repo, either update `configs/base.yaml` or pass `--indiana-dir` to the Stage 1/Stage 2 scripts.
+Every command below assumes this layout. If OpenI lives elsewhere, either edit `data.indiana_dir` in the config or pass `--indiana-dir` to any script.
 
 **Zero-shot disease classes (NIH):** Atelectasis · Cardiomegaly · Consolidation · Edema · Effusion · Infiltration · Pneumonia · Pneumothorax
 
@@ -213,13 +213,7 @@ python3 scripts/stage1_inspect_openi_batch.py --batch-size 2 --split train
 python3 scripts/stage1_forward_real_batch.py --batch-size 2 --split train
 ```
 
-If OpenI is in a different location:
-
-```bash
-python3 scripts/stage2_smoke_check.py --indiana-dir /path/to/openi
-python3 scripts/stage1_inspect_openi_batch.py --indiana-dir /path/to/openi
-python3 scripts/stage1_forward_real_batch.py --indiana-dir /path/to/openi
-```
+If OpenI lives somewhere else, add `--indiana-dir /path/to/openi` to any of these.
 
 To regenerate deterministic OpenI split files:
 
@@ -251,7 +245,7 @@ The training script auto-detects MPS (Apple Silicon) / CUDA / CPU.
 If OpenI is outside `data/indiana`, pass:
 
 ```bash
-python src/train.py --config configs/base.yaml --indiana-dir /path/to/openi
+python src/train.py --config configs/base.yaml
 ```
 
 ---
@@ -262,7 +256,7 @@ python src/train.py --config configs/base.yaml --indiana-dir /path/to/openi
 # Retrieval on OpenI test split
 python src/retrieval.py --checkpoint checkpoints/best.pt
 # If OpenI is outside data/indiana:
-python src/retrieval.py --checkpoint checkpoints/best.pt --indiana-dir /path/to/openi
+python src/retrieval.py --checkpoint checkpoints/best.pt
 
 # Zero-shot classification on NIH
 python src/zeroshot.py --checkpoint checkpoints/best.pt --prompt patient
@@ -279,7 +273,7 @@ python3 scripts/stage3_medclip_diagnostic.py \
 ## Fine-tuning BioMedCLIP (Stage 4)
 
 ```bash
-python3 src/train.py --config configs/biomedclip_ft_lr1e5.yaml --indiana-dir /path/to/openi
+python3 src/train.py --config configs/biomedclip_ft_lr1e5.yaml
 ```
 
 The three `configs/biomedclip_ft_lr*.yaml` arms differ only in `lr_encoders`. ViT-B/16 is roughly 4x

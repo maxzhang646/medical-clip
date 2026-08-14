@@ -231,8 +231,8 @@ clinical diagnostic model.
 
 ```bash
 # Fine-tune either backbone
-python3 src/train.py --config configs/clipnorm.yaml --indiana-dir /path/to/openi
-python3 src/train.py --config configs/biomedclip_ft_lr1e5_ep5.yaml --indiana-dir /path/to/openi
+python3 src/train.py --config configs/clipnorm.yaml
+python3 src/train.py --config configs/biomedclip_ft_lr1e5_ep5.yaml
 
 # Retrieval + matched-vs-random diagnostics
 python3 scripts/stage3_medclip_diagnostic.py --config configs/biomedclip_ft_lr1e5_ep5.yaml \
@@ -247,8 +247,9 @@ python3 scripts/stage6_compare_checkpoints.py --config-a ... --config-b ...
 python3 scripts/stage6_failure_analysis.py --config ... --checkpoint ...
 ```
 
-Kaggle notebooks for the GPU runs are in [`notebooks/`](notebooks/). NIH zero-shot needs the dataset
-attached as an input; OpenI falls back to kagglehub.
+These assume OpenI is at `data/indiana/` (the config default); pass `--indiana-dir` to point
+elsewhere. Kaggle notebooks for the GPU runs are in [`notebooks/`](notebooks/) — NIH zero-shot needs
+the dataset attached as an input, while OpenI falls back to kagglehub there.
 
 ## References
 

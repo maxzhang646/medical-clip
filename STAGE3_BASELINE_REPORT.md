@@ -355,22 +355,34 @@ ln(64) = 4.159 的随机基线。起点已对齐的模型，在 2554 个样本�
 
 BioMedCLIP FT 的检索指标全面领先，gap 却只有对照组的 1/7。这不是矛盾，是 gap 本身不是尺度无关量：
 
-| Model | matched | random | gap | gap / random std |
-|-------|---------|--------|-----|------------------|
-| CLIP+ClinicalBERT FT | 0.2804 | 0.1087 | 0.1717 | 1.0965 |
-| BioMedCLIP FT (lr 1e-5) | 0.4173 | 0.3942 | 0.0230 | 待补测 |
-
 BioMedCLIP 的嵌入挤在一个很窄的锥形区域里：两个毫不相关的图文向量，余弦相似度已经有 0.394。
 绝对差值被压缩，但**排序完全不受影响**。
+
+试过两种修正，**都失败了**（BioMedCLIP 行为本地评测的 lr3e6 checkpoint）：
+
+| Model | gap | gap / random std | per-query z (I->T) | I->T R@5 |
+|-------|-----|------------------|--------------------|----------|
+| CLIP+ClinicalBERT FT | 0.1717 | 1.0965 | 1.0740 | 12.81 |
+| BioMedCLIP FT | 0.0238 | 0.9379 | 1.0332 | **17.50** |
+
+- `gap / random std`：除以随机分数的标准差，解决了尺度问题
+- `per-query z`：改成逐行计算，即"真实配对比**该查询自己的**干扰项高多少个自身标准差"
+
+**两者仍然把 BioMedCLIP 排在后面，与检索结果相反。**
+
+原因：三个统计量衡量的都是**集中趋势**，而排序是**尾部性质**。R@K 取决于"有多少个干扰项超过了正确
+答案"，不是"平均干扰项在哪"。OpenI 里大量措辞雷同的 normal 报告，正好制造了这种"平均边际不错、但
+少数几个近邻致命"的情况。
 
 结论：
 
 ```text
-raw gap 只能在同一个 backbone 内部比较。
-跨 backbone 比较必须用 R@K / MedR，或 normalized gap (gap / random std)。
+matched-vs-random 这一族统计量只能回答"到底有没有对齐"（vanilla CLIP 0.0005 -> 没有），
+以及在同一 backbone 内部做消融比较。
+"谁对齐得更好"只能用 MedR / R@K —— 它们本身就是基于 rank 的。
 ```
 
-`scripts/stage3_medclip_diagnostic.py` 现已同时输出 normalized gap，并支持
+`scripts/stage3_medclip_diagnostic.py` 三个都输出，让这种不一致保持可见；并支持
 `--backbone biomedclip` 直接评测 Stage 4 的 checkpoint。
 
 第 5.1 节用 gap 判定"vanilla CLIP 几乎没有医学对齐"仍然成立 —— 那是在同属窄锥几何的两个模型之间比较

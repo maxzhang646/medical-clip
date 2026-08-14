@@ -88,9 +88,33 @@ def matched_random_stats(similarity: np.ndarray, seed: int = 42) -> dict[str, fl
         # The raw gap is not scale-free: models whose embeddings occupy a narrow
         # cone (BioMedCLIP: random pairs already at ~0.39 cosine) show a small
         # absolute gap even when they rank well. Dividing by the spread of the
-        # random scores gives an effect size that is comparable across backbones.
+        # random scores makes it scale-free -- but it is still a *global* mean
+        # shift, and retrieval is decided per query, so it does not track R@K
+        # either (measured: 1.0965 for CLIP+ClinicalBERT vs 0.9379 for BioMedCLIP,
+        # the opposite order to their R@K).
         "gap_normalized": gap / random_std if random_std > 0 else float("nan"),
+        # Per-query effect size: how far the true match sits above that query's own
+        # distractors, in units of that query's own spread. Reported because it is
+        # the natural per-query repair of the global gap -- but measurement shows it
+        # does NOT track R@K either (1.0332 for BioMedCLIP vs 1.0740 for
+        # CLIP+ClinicalBERT, again the opposite order to their retrieval scores).
+        # Ranking depends on how many distractors beat the true match, which is a
+        # tail property; every statistic here summarizes central tendency.
+        **_row_z_scores(similarity),
     }
+
+
+def _row_z_scores(similarity: np.ndarray) -> dict[str, float]:
+    off = similarity.astype(float).copy()
+    np.fill_diagonal(off, np.nan)
+    matched = np.diag(similarity)
+
+    def z_along(axis: int) -> float:
+        mean = np.nanmean(off, axis=axis)
+        std = np.nanstd(off, axis=axis)
+        return float(np.mean((matched - mean) / std))
+
+    return {"row_z_i2t": z_along(1), "row_z_t2i": z_along(0)}
 
 
 @torch.no_grad()
@@ -147,12 +171,21 @@ def write_report(
         "",
         f"Matched-minus-random gap: `{stats['gap']:.4f}`",
         f"Normalized gap (gap / random std): `{stats['gap_normalized']:.4f}`",
+        f"Per-query z-score, image->text: `{stats['row_z_i2t']:.4f}`",
+        f"Per-query z-score, text->image: `{stats['row_z_t2i']:.4f}`",
         "",
         "Interpretation: a positive gap means paired X-ray/report examples are closer than random mismatches in the learned shared embedding space.",
         "",
-        "Compare the raw gap only within one backbone. Across backbones use the normalized gap or the",
-        "ranking metrics: the raw gap scales with how tightly the embeddings are packed, so a model whose",
-        "embeddings sit in a narrow cone can rank better while showing a much smaller absolute gap.",
+        "Compare the raw gap only within one backbone: it scales with how tightly the embeddings are",
+        "packed, so a model whose embeddings sit in a narrow cone can rank better while showing a much",
+        "smaller absolute gap. Neither repair rescues cross-backbone comparison -- normalizing by the",
+        "spread, and even the per-query z-score, both rank BioMedCLIP below CLIP+ClinicalBERT while its",
+        "R@K is far higher. All three summarize central tendency, whereas ranking is a tail property:",
+        "what matters is how many distractors beat the true match, not the average distractor.",
+        "",
+        "Use these statistics to answer 'is there any alignment at all' (vanilla CLIP: 0.0005 -> no).",
+        "For 'which model aligns better', MedR and R@K are the summary statistics, and they are already",
+        "rank-based by construction.",
     ]
     out_path.write_text("\n".join(lines) + "\n")
 
@@ -205,6 +238,7 @@ def main() -> None:
     print(f"  random mean:  {stats['random_mean']:.4f}")
     print(f"  gap:          {stats['gap']:.4f}")
     print(f"  gap/std:      {stats['gap_normalized']:.4f}")
+    print(f"  per-query z:  I->T {stats['row_z_i2t']:.4f}  T->I {stats['row_z_t2i']:.4f}")
     print(f"\nWrote report -> {args.out}")
 
 

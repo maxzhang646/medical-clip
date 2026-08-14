@@ -109,18 +109,32 @@ metric: the initialization matters more than the fine-tuning recipe.
 BioMedCLIP FT retrieves better than the CLIP+ClinicalBERT checkpoint while showing a gap 7x smaller
 (0.0230 vs 0.1717). The metrics do not actually disagree — the raw gap is not scale-free:
 
-| Model | matched | random | gap | gap / random std |
-|-------|---------|--------|-----|------------------|
-| CLIP+ClinicalBERT FT | 0.2804 | 0.1087 | 0.1717 | 1.0965 |
-| BioMedCLIP FT (lr 1e-5) | 0.4173 | 0.3942 | 0.0230 | see note |
-
 BioMedCLIP's embeddings occupy a narrow cone: two unrelated image/report vectors already sit at 0.394
 cosine similarity. Absolute differences are therefore compressed while the *ranking* is unaffected.
 
-Use the raw gap only within one backbone — where it correctly separated the preprocessing ablations
-and correctly showed that vanilla CLIP (0.0005) has essentially no medical alignment. Across
-backbones, compare R@K/MedR, or the normalized gap (`gap / std of random scores`) that
-`scripts/stage3_medclip_diagnostic.py` now reports.
+Two repairs were tried, and both fail. Measured on the same test split (BioMedCLIP row is the lr3e6
+checkpoint, evaluated locally):
+
+| Model | gap | gap / random std | per-query z (I→T) | I→T R@5 |
+|-------|-----|------------------|-------------------|---------|
+| CLIP+ClinicalBERT FT | 0.1717 | 1.0965 | 1.0740 | 12.81 |
+| BioMedCLIP FT | 0.0238 | 0.9379 | 1.0332 | **17.50** |
+
+Normalizing by the spread of the random scores makes the statistic scale-free, and the per-query
+z-score (how far the true match sits above *that query's own* distractors, in units of that query's
+own spread) removes the global-average assumption. **Both still rank BioMedCLIP below
+CLIP+ClinicalBERT, the opposite of the retrieval order.**
+
+The reason is that all three summarize central tendency, while ranking is a tail property: R@K is
+decided by *how many* distractors beat the true match, not by where the average distractor sits. With
+many near-identical "no acute cardiopulmonary disease" reports, a model can have a good mean margin
+and still lose to a handful of confusable neighbours.
+
+So the matched-vs-random family answers only the narrow question it was introduced for — *is there
+any alignment at all* (vanilla CLIP: 0.0005 → no) — and within one backbone, where it correctly
+separated the preprocessing ablations. For *which model aligns better*, MedR and R@K are the summary
+statistics, and they are rank-based by construction.
+`scripts/stage3_medclip_diagnostic.py` reports all three so the discrepancy stays visible.
 
 ### Remaining confounds
 

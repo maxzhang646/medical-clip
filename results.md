@@ -246,6 +246,45 @@ images and move together across all seven prompt templates (+0.075 to +0.196 Mac
 0.4729 → 0.7882). Cross-dataset zero-shot is also the harder test, so this is the stronger leg to
 stand on — but the retrieval table should be read as consistent-but-underpowered, not as proof.
 
+### Stage 6: what the retrieval failures actually are
+
+The Stage 3 notes offered two consolations for the low R@K: that boilerplate normal reports make
+exact matching impossible, and that many misses are still medically close. Both are testable.
+`scripts/stage6_failure_analysis.py` tests them on the BioMedCLIP FT checkpoint, using TF-IDF text
+similarity — computed independently of any model embedding — plus a coarse normal/abnormal label.
+
+**Claim 1: near-duplicate reports explain the failures. Falsified.**
+
+| near-duplicates (TF-IDF ≥ 0.8) | queries | median rank | R@5 |
+|---|---|---|---|
+| 0 | 236 | 37.5 | 19.9% |
+| 1–2 | 39 | 65.0 | 7.7% |
+| 3–5 | 35 | 79.0 | 2.9% |
+| 6+ | 10 | 60.0 | 20.0% |
+
+Duplicates do hurt where they exist, but **236 of 320 queries have no near-duplicate at all and still
+reach only 19.9% R@5**. The correlation between duplicate count and rank is +0.04. Boilerplate is a
+real but minor effect, not the explanation. (Sweeping the threshold from 0.5 to 0.8 does not change
+this.)
+
+**Claim 2: failures are near misses. Falsified.**
+
+Among the 267 failed queries:
+
+- median TF-IDF similarity between the rank-1 report and the true report: **0.105**
+- number whose rank-1 report is a near-duplicate of the truth: **0 of 267**
+- rank-1 agrees with the truth on the coarse normal/abnormal label: **55.4%**, against 51.2% expected
+  by chance at this base rate (57.8% of reports are normal) — a 1.4 SE difference, not significant
+
+TF-IDF is lexical, and two normal reports worded differently do score low despite meaning the same
+thing, which is why the normal/abnormal label is there as a backstop. It agrees with the lexical
+verdict: when this model misses, the report it ranks first is **not reliably even in the right
+normal/abnormal category**.
+
+So exact-match retrieval is not being unfairly strict on this model. The failures are failures, and
+the earlier framing — "retrieval quality should be read as both exact-match ranking and medical
+semantic similarity" — was giving the model credit the evidence does not support.
+
 ## 2. Zero-shot Classification (NIH ChestX-ray14, 2000 samples)
 
 ### Comparison with published methods

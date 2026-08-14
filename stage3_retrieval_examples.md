@@ -1,5 +1,12 @@
 # Stage 3 Retrieval Examples
 
+> **Superseded in part by Stage 6.** The qualitative reading below suggested that some failed
+> retrievals were still clinically close. Measured over all 267 failures, that does not hold: the
+> median TF-IDF similarity between the rank-1 and the true report is 0.105, and rank-1 agrees with
+> the truth on normal-vs-abnormal only 55.4% of the time against 51.2% by chance. See
+> `stage6_failure_analysis.md`.
+
+
 Qualitative image-to-report retrieval examples from the OpenI split.
 
 - Checkpoint: `checkpoints/best.pt`

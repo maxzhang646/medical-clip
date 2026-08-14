@@ -251,12 +251,24 @@ backbone change acts as an independent test of the three claims made from the fi
 | Claim from the CLIP+ClinicalBERT ablation | Survives the backbone change? |
 |-------------------------------------------|-------------------------------|
 | `patient` is the best template | **No.** Best is now `clinical` (0.6824); `patient` drops to 4th (0.6642). |
-| `ensemble` loses to the best single prompt through negative interference | **No.** `ensemble` is now 3rd of 7, above `patient` and `radiologist`. |
+| `ensemble` loses to the best single prompt | **Yes, but the effect collapses.** Ranked 3rd of 7 on both backbones, but the deficit against the best single template falls from -0.1007 to -0.0123. |
 | `pos_neg` is the worst strategy | **Yes.** Last on both backbones (0.4496, 0.5913). |
 
-So two of the three were properties of one checkpoint, not of prompt design. Only the negative
-result generalizes: averaging "No evidence of {disease}" into the class embedding pulls it toward
-no-disease space, and that hurts regardless of backbone.
+Only the choice of best template turns out to be checkpoint-specific. The two negative results hold
+in direction on both backbones — averaging "No evidence of {disease}" into a class embedding pulls it
+toward no-disease space, and ensembling still does not beat the best single template.
+
+The ensemble row is worth reading as a margin rather than a verdict:
+
+| Backbone | best single | ensemble | ensemble − best single |
+|----------|-------------|----------|------------------------|
+| CLIP+ClinicalBERT | patient 0.5889 | 0.4882 | −0.1007 |
+| BioMedCLIP FT | clinical 0.6824 | 0.6701 | −0.0123 |
+
+On the weaker backbone, mixing prompt styles cost a tenth of an AUC point; on the stronger one the
+penalty is small enough to be noise. "Negative interference between prompt styles" is therefore not a
+fixed property of ensembling — it is another symptom of a weak visual representation, consistent with
+the shrinking spread across templates.
 
 A fourth observation is new: **prompt sensitivity shrinks as the representation improves.** The
 spread across templates falls from 0.140 (CLIP+ClinicalBERT) to 0.091 (BioMedCLIP). Prompt

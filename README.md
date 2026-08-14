@@ -51,13 +51,14 @@ until a second one agrees.
 | Claim from the first ablation | Holds on the second backbone? |
 |-------------------------------|-------------------------------|
 | `patient` is the best template | **No** — `clinical` wins; `patient` falls to 4th |
-| `ensemble` loses through negative interference | **No** — `ensemble` is 3rd of 7 |
+| `ensemble` loses to the best single prompt | **Yes, but barely** — 3rd of 7 on both, yet the deficit shrinks from −0.101 to −0.012 |
 | `pos_neg` is the worst strategy | **Yes** — last on both |
 
-Two of the three were properties of one model. Only the negative result generalizes: averaging
-"No evidence of {disease}" into the class embedding pulls it toward no-disease space. A fourth
-pattern is new — prompt sensitivity *shrinks* as the representation improves (spread across templates
-0.140 → 0.091), so prompt engineering matters most when the visual encoder is weak.
+Which template wins is checkpoint-specific; the two negative results hold on both. But the ensemble
+penalty nearly vanishes on the stronger backbone, so "negative interference between prompt styles" is
+not a property of ensembling — it is a symptom of a weak visual representation. The same pattern shows
+up as shrinking prompt sensitivity overall (spread across templates 0.140 → 0.091): prompt
+engineering matters most when the visual encoder is weak.
 
 Per-backbone detail below; full numbers and error bars in [results.md](results.md).
 
@@ -79,7 +80,8 @@ Per-backbone detail below; full numbers and error bars in [results.md](results.m
 - `pos_neg` is the worst strategy on both
 
 **Findings that did not:**
-- `patient` being best, and `ensemble` losing to the best single prompt, are specific to this checkpoint
+- `patient` being best is specific to this checkpoint
+- The *size* of the ensemble penalty: −0.101 here, −0.012 on BioMedCLIP
 - Edema was the hardest class here (best 0.473, below random) and was attributed to under-representation in OpenI. Fine-tuned BioMedCLIP reaches **0.788** on the same data, so the constraint was the visual representation, not the training reports. Infiltration is the class that is broken on both (0.374–0.530)
 
 ![ROC Curves](figures/roc_curves.png)

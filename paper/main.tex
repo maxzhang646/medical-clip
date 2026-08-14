@@ -1,0 +1,430 @@
+\documentclass[runningheads]{llncs}
+
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{multirow}
+\usepackage[T1]{fontenc}
+\usepackage{orcidlink}
+\usepackage[hidelinks]{hyperref}
+
+\begin{document}
+
+\title{What Survives a Second Backbone? Evaluation Pitfalls in\\Contrastive
+Medical Vision--Language Alignment on Small Benchmarks}
+
+% Double-blind submission: anonymised.
+\author{Anonymous Author(s)}
+\authorrunning{Anonymous}
+\institute{Anonymous Institution}
+
+\maketitle
+
+\begin{abstract}
+Contrastive image--text pretraining is the standard route to a chest X-ray vision
+encoder, and small public benchmarks such as IU~X-Ray are the standard place to
+validate it. We report a controlled study on IU~X-Ray in which four conclusions
+drawn from a first set of experiments were subsequently overturned by our own
+follow-up experiments, and we identify the evaluation practice responsible for
+each. Fine-tuning CLIP ViT-B/32 paired with ClinicalBERT on 2{,}554 image--report
+pairs reaches R@5 of 12.81\% against a 1.56\% random baseline, establishing that
+alignment is learned rather than inherited. Fine-tuning BioMedCLIP on the
+identical data reaches 17.50\%, an apparently decisive win---but a paired McNemar
+test on the top-$K$ indicator gives $p \geq 0.09$ for every direction and cutoff,
+because 320 queries cannot resolve a four-point difference in R@5. A prompt
+ablation that identified a best template and a penalty for prompt ensembling does
+not transfer: re-running it on the second backbone changes the winning template
+and shrinks the ensembling penalty from $-0.101$ to $-0.012$ Macro AUC. The
+widely used matched-minus-random similarity gap ranks the two backbones in the
+opposite order to every ranking metric, and two natural repairs---normalising by
+the spread and a per-query $z$-score---preserve the wrong order, because all
+three summarise central tendency while retrieval is a tail property. Finally,
+two common explanations for weak retrieval on this dataset---boilerplate
+duplicate reports, and failures that are ``still clinically close''---are
+falsified by measurement. We give the diagnostic that catches each pitfall.
+
+\keywords{Vision--language pretraining \and Chest X-ray \and Evaluation
+methodology \and Contrastive learning \and Statistical power}
+\end{abstract}
+
+\section{Introduction}
+
+Contrastive vision--language pretraining, introduced by CLIP~\cite{radford2021clip}
+and adapted to chest radiography by ConVIRT~\cite{zhang2020convirt},
+CheXzero~\cite{tiu2022chexzero} and MedCLIP~\cite{wang2022medclip}, has become the
+default way to obtain a chest X-ray image encoder. Because paired image--report
+data is scarce and access-controlled, method development frequently happens on
+IU~X-Ray (OpenI)~\cite{demner2016openi}, a fully public collection of roughly
+3.8K reports and 7.5K images. IU~X-Ray remains an active benchmark: it appears in
+current MICCAI work on report generation and vision--language understanding, and
+its accessibility makes it the natural place to prototype.
+
+That convenience carries a measurement cost that is easy to overlook. A test
+split of a few hundred queries supports far weaker claims than the numbers
+printed on it suggest, and several evaluation habits in this literature amplify
+the problem: comparing a fine-tuned model against an off-the-shelf one,
+summarising alignment with a similarity gap that is not scale-free, and drawing
+prompt-design conclusions from a single checkpoint.
+
+This paper is a study of those habits rather than a new method. We ran a
+controlled comparison of two backbones on identical data, splits and
+hyperparameters, and then re-examined each conclusion with the test appropriate
+to it. Four conclusions did not survive. Our contributions are:
+
+\begin{enumerate}
+\item A controlled $2\times2$ of initialisation $\times$ fine-tuning on
+IU~X-Ray, showing that the widely reported advantage of task-specific
+fine-tuning over medical-domain pretraining can be an artefact of comparing a
+fine-tuned model to a zero-shot one.
+\item A paired-test analysis showing that a four-point R@5 difference on a
+320-query split is not statistically resolvable, with the query count required to
+resolve it.
+\item Evidence that prompt-ablation conclusions are checkpoint-specific: which
+template wins changes with the backbone, while the negative results transfer.
+\item A demonstration that the matched-minus-random similarity gap and two
+natural repairs all rank backbones opposite to ranking metrics, with the reason.
+\item Falsification of two standard explanations for weak retrieval on this
+dataset.
+\end{enumerate}
+
+\section{Related Work}
+
+\textbf{Medical contrastive pretraining.} ConVIRT~\cite{zhang2020convirt} first
+applied bidirectional contrastive learning to chest X-ray/report pairs.
+CheXzero~\cite{tiu2022chexzero} showed that report supervision alone yields
+radiologist-level zero-shot classification given MIMIC-CXR-scale data.
+MedCLIP~\cite{wang2022medclip} decouples images and text and replaces the
+one-hot InfoNCE target with a soft semantic-matching matrix, motivated by false
+negatives among semantically identical pairs.
+BioMedCLIP~\cite{zhang2023biomedclip} pretrains on PMC-15M figure--caption pairs
+spanning many modalities, pairing a ViT-B/16 tower with PubMedBERT.
+
+\textbf{Evaluation of medical vision--language models.} Concerns about
+evaluation are established for report generation, where $n$-gram metrics are
+known to reward clinically wrong output, prompting clinically grounded
+alternatives. Comparable scrutiny of retrieval and zero-shot classification
+protocols has received less attention, which is the gap this paper addresses.
+
+\section{Experimental Setup}
+
+\textbf{Data.} We use IU~X-Ray~\cite{demner2016openi}. Reports are joined to
+frontal images by study identifier; \texttt{Findings} and \texttt{Impression} are
+concatenated as the caption. After removing studies missing either section we
+obtain 3{,}193 pairs, split at patient level into 2{,}554 / 319 / 320 for
+train / validation / test. Splits are fixed and released with our code.
+
+\textbf{Backbones.} \emph{Backbone A} pairs the CLIP ViT-B/32 image tower with
+ClinicalBERT~\cite{alsentzer2019clinicalbert} and trains two randomly
+initialised projections into a shared 512-d space. \emph{Backbone B} is
+BioMedCLIP, fine-tuned end to end. Backbone B deliberately adds no new
+projection: BioMedCLIP ships trained projection heads, and a randomly
+initialised layer on top would destroy the pretrained alignment and invalidate
+the comparison. It also retains its learned temperature ($\tau \approx 0.0117$)
+rather than the configured $0.07$.
+
+\textbf{Training.} Symmetric InfoNCE, batch size 64, AdamW, cosine schedule with
+10\% warmup, first 8 image blocks frozen. Backbone B was swept over
+$\{1\!\times\!10^{-5}, 3\!\times\!10^{-6}, 1\!\times\!10^{-6}\}$ encoder learning
+rates so that a poor result could be attributed to the learning rate rather than
+to the backbone. Everything except the swept variable is held identical to
+Backbone A.
+
+\textbf{Evaluation.} Retrieval is measured on the 320-pair test split by R@$K$
+and median rank; the random baseline is R@5 $=1.56\%$. Zero-shot classification
+uses NIH ChestX-ray14~\cite{wang2017chestxray14} over eight classes on a fixed
+2{,}000-image subset, reported as AUC-ROC across seven prompt templates.
+
+\section{Results}
+
+\subsection{Alignment is learned, not inherited}
+
+Table~\ref{tab:retrieval} gives the retrieval results. Vanilla CLIP sits exactly
+at the random baseline, and its matched-minus-random similarity gap is $0.0005$:
+it assigns true and mismatched X-ray/report pairs nearly identical scores.
+General-domain image--text alignment does not transfer to this domain at all.
+Contrastive fine-tuning on 2{,}554 pairs moves R@5 to 12.81\% and the gap to
+$0.1717$, mostly by pushing mismatched pairs apart (random-pair similarity falls
+from $0.3039$ to $0.1087$) rather than by pulling matched pairs together.
+
+\begin{table}[t]
+\centering
+\caption{Retrieval on the IU~X-Ray test split (320 candidates). Random baseline
+is R@5 $=1.56$. Both fine-tuned rows use identical data, splits and
+hyperparameters.}
+\label{tab:retrieval}
+\begin{tabular}{lcccccc}
+\toprule
+& \multicolumn{3}{c}{Image $\rightarrow$ Text} & \multicolumn{3}{c}{Text $\rightarrow$ Image} \\
+\cmidrule(lr){2-4}\cmidrule(lr){5-7}
+Model & R@1 & R@5 & MedR & R@1 & R@5 & MedR \\
+\midrule
+Vanilla CLIP (zero-shot)        & 0.00 & 1.56  & 162.5 & 0.31 & 2.81  & 166.0 \\
+BioMedCLIP (zero-shot)          & 1.56 & 5.31  & 120.0 & 1.25 & 6.25  & 108.5 \\
+Backbone A (fine-tuned)         & 3.75 & 12.81 & 49.5  & 4.38 & 11.88 & 47.0 \\
+Backbone B (fine-tuned)         & 6.25 & 17.50 & 45.5  & 5.31 & 17.50 & 46.0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Pitfall 1: comparing a fine-tuned model against a zero-shot one}
+
+Rows two and three of Table~\ref{tab:retrieval} invite the conclusion that
+task-specific fine-tuning matters more than medical-domain pretraining: our
+fine-tuned Backbone A beats off-the-shelf BioMedCLIP by a factor of two. That
+comparison confounds the initialisation with the fact that only one side
+received a training budget. Filling in the missing cell reverses the ordering
+(Table~\ref{tab:twobytwo}): given an equal budget on identical data, the
+medical-pretrained initialisation is ahead on every ranking metric, and on
+zero-shot transfer by a wide margin.
+
+\begin{table}[t]
+\centering
+\caption{The $2\times2$ of initialisation $\times$ fine-tuning, as I$\rightarrow$T
+R@5 on IU~X-Ray, with fine-tuned NIH Macro AUC alongside. Both main effects are
+positive and the combination is best.}
+\label{tab:twobytwo}
+\begin{tabular}{lccc}
+\toprule
+& \multicolumn{2}{c}{R@5 (IU~X-Ray)} & Macro AUC (NIH) \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-4}
+Initialisation & zero-shot & fine-tuned & fine-tuned \\
+\midrule
+CLIP + ClinicalBERT & 1.56 & 12.81 & 0.589 \\
+BioMedCLIP          & 5.31 & \textbf{17.50} & \textbf{0.682} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Pitfall 2: reporting an unpaired difference on a small split}
+
+The 12.81 $\rightarrow$ 17.50 improvement is a 37\% relative gain and reads as
+decisive. It is not statistically resolvable. R@$K$ is a threshold metric, so the
+matched test is McNemar's test on the ``entered the top $K$'' indicator
+(Table~\ref{tab:mcnemar}). No direction or cutoff reaches $p<0.05$; the best is
+I$\rightarrow$T R@10 at $p=0.09$. Repeating the analysis with the
+$3\!\times\!10^{-6}$ checkpoint, which has the highest raw R@5, gives the same
+verdict at $p=0.11$.
+
+The discordant counts explain why: Backbone B gains 42 top-5 hits and loses 30,
+a net $+12$ against substantial churn. Over all 320 queries, ranks improve for
+160 and degrade for 155 (sign test $z=+0.28$): the two models differ near the top
+of the ranking, not globally. Solving
+$|b-c| \geq 1.96\sqrt{b+c}$ at the observed discordance rate gives approximately
+615 queries as the size needed to resolve this effect---roughly twice the
+available test split.
+
+\begin{table}[t]
+\centering
+\caption{Paired McNemar tests between the two fine-tuned backbones. ``Gained''
+and ``lost'' count queries entering and leaving the top $K$ under Backbone B.}
+\label{tab:mcnemar}
+\begin{tabular}{llccccc}
+\toprule
+Direction & Metric & A & B & gained & lost & $p$ \\
+\midrule
+I$\rightarrow$T & R@1  & 3.75  & 5.94  & 16 & 9  & 0.23 \\
+I$\rightarrow$T & R@5  & 12.81 & 16.56 & 42 & 30 & 0.20 \\
+I$\rightarrow$T & R@10 & 20.62 & 26.25 & 58 & 40 & 0.09 \\
+T$\rightarrow$I & R@1  & 4.38  & 4.06  & 12 & 13 & 1.00 \\
+T$\rightarrow$I & R@5  & 11.88 & 15.62 & 40 & 28 & 0.18 \\
+T$\rightarrow$I & R@10 & 19.38 & 24.38 & 59 & 43 & 0.14 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The backbone claim is therefore carried by zero-shot transfer, not by retrieval.
+On NIH, all seven prompt templates improve by $+0.075$ to $+0.196$ Macro AUC
+(Table~\ref{tab:prompts}), on 2{,}000 images and a harder, cross-dataset test.
+
+\subsection{Pitfall 3: prompt conclusions from a single checkpoint}
+
+Table~\ref{tab:prompts} reports the prompt ablation on both backbones. On
+Backbone A the ranking suggests two design rules: the template
+``\texttt{A patient with \{disease\}}'' is best, and ensembling templates loses to
+the best single template through interference between styles. Re-running the
+identical ablation on Backbone B keeps only the second, and weakens it: the
+winning template changes to ``\texttt{The chest radiograph demonstrates
+\{disease\}}'', while the ensembling deficit shrinks from $-0.101$ to $-0.012$
+Macro AUC, i.e.\ into noise.
+
+The more useful reading is the margin rather than the verdict. Prompt
+sensitivity, measured as the spread across templates, falls from $0.140$ to
+$0.091$ as the visual representation improves. Prompt engineering matters most
+when the image encoder is weak; ``negative interference between prompt styles''
+is a symptom of that weakness rather than a property of ensembling.
+
+The one conclusion that transfers cleanly is negative: averaging negated
+templates (``\texttt{No evidence of \{disease\}}'') into the class embedding is
+the worst strategy on both backbones, consistent with the negation pulling the
+class prototype toward no-finding space.
+
+\begin{table}[t]
+\centering
+\caption{Zero-shot Macro AUC on NIH ChestX-ray14 (2{,}000 images, 8 classes) by
+prompt template. Best per column in bold.}
+\label{tab:prompts}
+\begin{tabular}{lccc}
+\toprule
+Template & Backbone A & Backbone B & $\Delta$ \\
+\midrule
+\texttt{\{disease\}}                              & 0.4487 & 0.6153 & $+0.167$ \\
+\texttt{Findings of \{d\} in chest X-ray}         & 0.4762 & 0.6719 & $+0.196$ \\
+\texttt{The chest radiograph demonstrates \{d\}}  & 0.5273 & \textbf{0.6824} & $+0.155$ \\
+\texttt{A patient with \{d\}}                     & \textbf{0.5889} & 0.6642 & $+0.075$ \\
+\texttt{There is evidence of \{d\}}               & 0.4854 & 0.6542 & $+0.169$ \\
+Ensemble of positive templates                    & 0.4882 & 0.6701 & $+0.182$ \\
+Positive $+$ negated templates                    & 0.4496 & 0.5913 & $+0.142$ \\
+\midrule
+Spread across templates                           & 0.140  & 0.091  & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A second observation concerns per-class behaviour. On Backbone A, Edema is the
+worst class at 0.473, below chance, which we initially attributed to its rarity
+in IU~X-Ray reports and to visual overlap with Effusion and Consolidation,
+concluding that larger data would be required. On the same 2{,}554 pairs,
+Backbone B reaches 0.788 on Edema and 0.782 on Effusion. Scarcity and inter-class
+overlap therefore cannot be the binding constraints; the constraint was the
+visual representation. Infiltration replaces Edema as the one systematically
+broken class, at 0.374--0.479 across all templates with roughly 340 positives.
+
+\subsection{Pitfall 4: summarising alignment with a similarity gap}
+
+The matched-minus-random similarity gap is attractive because it separates a
+model with no domain alignment (vanilla CLIP, $0.0005$) from one that has learned
+some ($0.1717$). It does not survive being used to rank models. Backbone B
+retrieves better while scoring $0.0238$, a seven-fold smaller gap, because its
+embeddings occupy a narrow cone: unrelated image--report pairs already sit at
+$0.394$ cosine similarity, compressing absolute differences without affecting
+ranking.
+
+Two repairs fail (Table~\ref{tab:gap}). Normalising by the spread of the random
+scores makes the statistic scale-free, and a per-query $z$-score removes the
+global-average assumption; both still order the backbones opposite to R@5. All
+three statistics summarise central tendency, whereas R@$K$ is determined by how
+many distractors outscore the true match---a tail property. We therefore
+recommend restricting the gap family to the question it can answer, presence or
+absence of alignment, and to within-backbone ablations.
+
+\begin{table}[t]
+\centering
+\caption{Similarity-gap statistics order the backbones opposite to R@5.}
+\label{tab:gap}
+\begin{tabular}{lcccc}
+\toprule
+Model & gap & gap / std & per-query $z$ & R@5 \\
+\midrule
+Backbone A (fine-tuned) & 0.1717 & 1.0965 & 1.0740 & 12.81 \\
+Backbone B (fine-tuned) & 0.0238 & 0.9379 & 1.0332 & \textbf{17.50} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Two standard explanations for weak retrieval are false}
+
+Weak exact-match retrieval on IU~X-Ray is commonly excused on two grounds: that
+boilerplate normal reports make the task ill-posed, and that failed retrievals
+are still clinically close. We tested both using TF-IDF similarity computed
+independently of any model embedding.
+
+Near-duplicate reports do hurt where they occur---R@5 falls from 19.9\% for
+queries with no near-duplicate competitor to 7.7\% and 2.9\% for those with one
+to two and three to five---but 236 of 320 queries have no near-duplicate at all
+and still reach only 19.9\%. The correlation between duplicate count and rank is
+$+0.04$, stable across thresholds from 0.5 to 0.8. Exact-duplicate captions
+occur, but affect the R@5 ceiling only marginally: a perfect model would reach
+99.4\%.
+
+Among the 267 failures, the median TF-IDF similarity between the rank-1 and the
+true report is $0.105$, and none is a near-duplicate. Because lexical similarity
+under-counts two differently worded normal reports, we added a coarse
+normal-versus-abnormal label: rank-1 agrees with the true report 55.4\% of the
+time against 51.2\% expected by chance, a $1.4\sigma$ difference. When this model
+misses, the report it ranks first is not reliably even in the correct
+normal/abnormal category. Exact-match retrieval is not being unfairly strict.
+
+\section{Discussion}
+
+The pitfalls above share a structure: a summary number is read as if it answered
+a question it was not measuring. We suggest four checks, each cheap.
+
+\textbf{Match the fine-tuning budget before attributing a difference to
+architecture or initialisation.} The reversal in Section~4.2 cost one additional
+training run.
+
+\textbf{Use the paired test that matches the metric.} R@$K$ is a threshold, so
+McNemar on the top-$K$ indicator is the matched test; reporting it alongside R@$K$
+would have prevented our own overstatement. Where a split is small, report the
+query count required to resolve the observed effect.
+
+\textbf{Replicate ablations on a second backbone before stating a design rule.}
+In our case this cost 26 GPU-minutes and changed two of three conclusions.
+
+\textbf{Prefer rank-based statistics for model comparison.} Similarity-margin
+summaries answer whether alignment exists, not whose is stronger.
+
+\textbf{Limitations.} Our backbones differ in patch size (ViT-B/16 versus
+ViT-B/32) as well as pretraining domain, and BioMedCLIP publishes no B/32
+variant, so the two cannot be separated here; part of the gain in
+Table~\ref{tab:twobytwo} is attributable to patch size. Per-class NIH AUCs for
+rare findings carry wide intervals ($\pm0.06$ for Edema, $\pm0.09$ for
+Pneumonia). All results are on one dataset at one scale; whether the same
+reversals occur at MIMIC-CXR scale is untested, though the statistical-power
+argument becomes weaker precisely as test splits grow.
+
+\section{Conclusion}
+
+Contrastive fine-tuning does create medical image--text alignment from two
+independently pretrained towers: a model that starts indistinguishable from
+random reaches eleven times the random baseline on 2{,}554 pairs. But the same
+study shows that on a 320-query benchmark, a 37\% relative retrieval improvement
+is not statistically resolvable, prompt-design rules do not survive a change of
+backbone, and the similarity-gap statistic ranks backbones backwards. Four of our
+own conclusions were overturned by follow-up experiments that cost minutes each.
+We suggest that small-benchmark medical vision--language results be accompanied
+by a paired significance test and, where a design rule is claimed, a second
+backbone.
+
+\begin{thebibliography}{9}
+
+\bibitem{radford2021clip}
+Radford, A., et al.: Learning transferable visual models from natural language
+supervision. In: ICML (2021)
+
+\bibitem{zhang2020convirt}
+Zhang, Y., Jiang, H., Miura, Y., Manning, C.D., Langlotz, C.P.: Contrastive
+learning of medical visual representations from paired images and text. In: MLHC
+(2022)
+
+\bibitem{tiu2022chexzero}
+Tiu, E., Talius, E., Patel, P., Langlotz, C.P., Ng, A.Y., Rajpurkar, P.:
+Expert-level detection of pathologies from unannotated chest X-ray images via
+self-supervised learning. Nature Biomedical Engineering \textbf{6}, 1399--1406
+(2022)
+
+\bibitem{wang2022medclip}
+Wang, Z., Wu, Z., Agarwal, D., Sun, J.: MedCLIP: Contrastive learning from
+unpaired medical images and text. In: EMNLP (2022)
+
+\bibitem{zhang2023biomedclip}
+Zhang, S., et al.: BiomedCLIP: a multimodal biomedical foundation model
+pretrained from fifteen million scientific image--text pairs. arXiv:2303.00915
+(2023)
+
+\bibitem{demner2016openi}
+Demner-Fushman, D., et al.: Preparing a collection of radiology examinations for
+distribution and retrieval. JAMIA \textbf{23}(2), 304--310 (2016)
+
+\bibitem{wang2017chestxray14}
+Wang, X., Peng, Y., Lu, L., Lu, Z., Bagheri, M., Summers, R.M.: ChestX-ray8:
+Hospital-scale chest X-ray database and benchmarks on weakly-supervised
+classification and localization of common thorax diseases. In: CVPR (2017)
+
+\bibitem{alsentzer2019clinicalbert}
+Alsentzer, E., et al.: Publicly available clinical BERT embeddings. In: Clinical
+NLP Workshop (2019)
+
+\end{thebibliography}
+
+\end{document}

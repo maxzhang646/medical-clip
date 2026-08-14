@@ -2,6 +2,9 @@
 
 A medical vision-language learning project focused on aligning chest X-ray images with radiology reports via contrastive learning. The main goal is to study multimodal representation learning through image-text retrieval, prompt-based zero-shot evaluation, and evidence retrieval for downstream medical reasoning.
 
+**[Full experimental report →](REPORT.md)** — including four claims this project made and later
+overturned with its own experiments, and the methodological traps behind them.
+
 ---
 
 ## Results
@@ -18,7 +21,7 @@ A medical vision-language learning project focused on aligning chest X-ray image
 Two findings, in order of how much they move the numbers:
 
 1. **Fine-tuning on radiology report pairs is what creates medical alignment at all.** Vanilla CLIP sits exactly at the random baseline (R@5 1.56% for 320 candidates); fine-tuning takes the same architecture to 12.81% and cuts median rank from 162 → 49.5.
-2. **The starting point then matters more than the recipe** — but the retrieval table is too small to prove it. Fine-tuning BioMedCLIP on the identical 2,554 pairs with identical hyperparameters raises R@1 by 67% and R@5 by 37%. A paired McNemar test over all 320 queries puts that at p = 0.20 (42 queries gained a top-5 hit, 30 lost one): consistent in direction, not significant. The claim rests instead on cross-dataset zero-shot, where all seven prompt templates improve by 0.075–0.196 Macro AUC. An earlier version of this README made the reverse comparison — fine-tuned against zero-shot — which was unfair to BioMedCLIP. See [results.md](results.md) for the 2x2, the paired tests, and the remaining confound (ViT-B/16 vs B/32).
+2. **The starting point then matters more than the recipe** — but the retrieval table is too small to prove it. Fine-tuning BioMedCLIP on the identical 2,554 pairs with identical hyperparameters raises R@1 by 67% and R@5 by 37%. A paired McNemar test over all 320 queries puts that at p = 0.20 (42 queries gained a top-5 hit, 30 lost one): consistent in direction, not significant. The claim rests instead on cross-dataset zero-shot, where all seven prompt templates improve by 0.075–0.196 Macro AUC. An earlier version of this README made the reverse comparison — fine-tuned against zero-shot — which was unfair to BioMedCLIP. See [REPORT.md](REPORT.md) §3.1 and §4.1 for the 2x2, the paired tests, and the remaining confound (ViT-B/16 vs B/32).
 
 ### Context vs published methods
 
@@ -60,7 +63,7 @@ not a property of ensembling — it is a symptom of a weak visual representation
 up as shrinking prompt sensitivity overall (spread across templates 0.140 → 0.091): prompt
 engineering matters most when the visual encoder is weak.
 
-Per-backbone detail below; full numbers and error bars in [results.md](results.md).
+Per-backbone detail below; full numbers, error bars, and the claims that did not survive are in [REPORT.md](REPORT.md).
 
 #### CLIP+ClinicalBERT — AUC-ROC by prompt template
 
@@ -182,7 +185,8 @@ xray/
 │   └── openi_test_uids.txt
 ├── checkpoints/
 │   └── best.pt           # best model (Epoch 9)
-├── results.md
+├── REPORT.md            # consolidated experimental report
+├── docs/archive/        # per-stage documents and raw run outputs
 └── requirements.txt
 ```
 
